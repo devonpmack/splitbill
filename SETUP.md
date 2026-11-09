@@ -47,8 +47,8 @@ supabase link --project-ref <project-ref>
 supabase db push
 ```
 
-`link` asks for the database password from step 1. `db push` lists the 26
-migrations in `supabase/migrations/` and asks you to confirm; answer yes.
+`link` asks for the database password from step 1. `db push` lists the
+migrations in `supabase/migrations/` (27 at the time of writing) and asks you to confirm; answer yes.
 
 > **Do not run `supabase migration repair --status applied 000`.** That line in
 > `supabase/schemas/README.md` was written for the original project, where
