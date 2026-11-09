@@ -322,13 +322,16 @@ describe("SQL security guards", () => {
 
   it("authorizes group expense edits to any member and re-validates splits", () => {
     const functions = readSchema("04_functions.sql");
-    const body = functionBody(functions, "update_expense_with_splits");
+    const body = functionBody(functions, "_update_group_expense");
+    const wrapper = functionBody(functions, "update_expense_with_splits");
 
-    expect(body).toMatch(/raise exception 'Not authenticated'/i);
+    // The public RPC supplies the signed-in user as the actor, never a parameter.
+    expect(wrapper).toMatch(/raise exception 'Not authenticated'/i);
+    expect(wrapper).toMatch(/_update_group_expense\(\s*v_uid,/i);
     expect(body).toMatch(/raise exception 'Expense not found'/i);
     // Any member of the expense's group may edit (mirrors the delete policy).
     expect(body).toMatch(
-      /IF NOT public\.is_group_member\(v_group_id,\s*v_uid\) THEN/i
+      /IF NOT public\.is_group_member\(v_group_id,\s*p_actor\) THEN/i
     );
     expect(body).toMatch(
       /IF NOT public\.is_group_member\(v_group_id,\s*p_paid_by\) THEN/i
@@ -340,11 +343,15 @@ describe("SQL security guards", () => {
 
   it("restricts contact expense edits to participants and re-validates splits", () => {
     const functions = readSchema("04_functions.sql");
-    const body = functionBody(functions, "update_contact_expense_with_splits");
+    const body = functionBody(functions, "_update_contact_expense");
+    const wrapper = functionBody(functions, "update_contact_expense_with_splits");
 
-    expect(body).toMatch(/raise exception 'Not authenticated'/i);
+    expect(wrapper).toMatch(/raise exception 'Not authenticated'/i);
+    expect(wrapper).toMatch(/_update_contact_expense\(\s*v_uid,/i);
     expect(body).toMatch(/raise exception 'Expense not found'/i);
-    expect(body).toMatch(/v_uid <> v_lo and v_uid <> v_hi/i);
+    expect(body).toMatch(
+      /p_actor is distinct from v_lo and p_actor is distinct from v_hi/i
+    );
     expect(body).toMatch(/p_paid_by <> v_lo and p_paid_by <> v_hi/i);
     expect(body).toMatch(/Split amounts must add up to the expense total/i);
   });

@@ -754,10 +754,13 @@ begin
 end;
 $$;
 
--- Edits an existing group expense and replaces its splits atomically. Any group
--- member may edit (mirrors the relaxed delete policy); the SECURITY DEFINER
--- context bypasses the payer-only UPDATE RLS. Validations match create.
-create or replace function public.update_expense_with_splits(
+-- Internal: the body of update_expense_with_splits, run on behalf of p_actor
+-- instead of auth.uid() so the recurring update (no JWT) can reuse it. Not
+-- callable by clients. p_mark_hand_edited flags a schedule-linked row as
+-- edited by hand; the recurring update passes false so rewriting a series
+-- does not freeze it, and an existing mark is never cleared.
+create or replace function public._update_group_expense(
+  p_actor uuid,
   p_expense_id uuid,
   p_paid_by uuid,
   p_amount numeric,
@@ -767,15 +770,15 @@ create or replace function public.update_expense_with_splits(
   p_splits jsonb,
   p_date timestamptz default null,
   p_currency text default 'USD',
-  p_exchange_rate numeric default 1
+  p_exchange_rate numeric default 1,
+  p_mark_hand_edited boolean default true
 )
 returns public.expenses
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
 declare
-  v_uid uuid := auth.uid();
   v_group_id uuid;
   v_expense public.expenses;
   v_split jsonb;
@@ -789,17 +792,13 @@ declare
   v_rate numeric := coalesce(p_exchange_rate, 1);
   v_base_amount numeric(12, 2);
 begin
-  if v_uid is null then
-    raise exception 'Not authenticated';
-  end if;
-
   select group_id into v_group_id from public.expenses where id = p_expense_id;
 
   if v_group_id is null then
     raise exception 'Expense not found';
   end if;
 
-  if not public.is_group_member(v_group_id, v_uid) then
+  if not public.is_group_member(v_group_id, p_actor) then
     raise exception 'You are not a member of this group';
   end if;
 
@@ -864,7 +863,11 @@ begin
     date = coalesce(p_date, date),
     currency = v_currency,
     exchange_rate = v_rate,
-    base_amount = v_base_amount
+    base_amount = v_base_amount,
+    hand_edited = case
+      when p_mark_hand_edited and schedule_id is not null then true
+      else hand_edited
+    end
   where id = p_expense_id
   returning * into v_expense;
 
@@ -884,6 +887,54 @@ begin
   end loop;
 
   return v_expense;
+end;
+$$;
+
+revoke execute on function public._update_group_expense(uuid, uuid, uuid, numeric, text, text, public.split_type, jsonb, timestamptz, text, numeric, boolean)
+  from public, anon, authenticated;
+
+-- Edits an existing group expense and replaces its splits atomically. Any group
+-- member may edit (mirrors the relaxed delete policy); the SECURITY DEFINER
+-- context bypasses the payer-only UPDATE RLS. Validations match create. A row
+-- that belongs to a recurring schedule is marked hand_edited.
+create or replace function public.update_expense_with_splits(
+  p_expense_id uuid,
+  p_paid_by uuid,
+  p_amount numeric,
+  p_description text,
+  p_category text,
+  p_split_type public.split_type,
+  p_splits jsonb,
+  p_date timestamptz default null,
+  p_currency text default 'USD',
+  p_exchange_rate numeric default 1
+)
+returns public.expenses
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+begin
+  if v_uid is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  return public._update_group_expense(
+    v_uid,
+    p_expense_id,
+    p_paid_by,
+    p_amount,
+    p_description,
+    p_category,
+    p_split_type,
+    p_splits,
+    p_date,
+    p_currency,
+    p_exchange_rate,
+    true
+  );
 end;
 $$;
 
@@ -1295,11 +1346,13 @@ begin
 end;
 $$;
 
--- Edits an existing one-on-one contact expense and replaces its splits. Either
--- participant may edit (SECURITY DEFINER bypasses the payer-only UPDATE RLS).
--- The participant pair (user_lo/user_hi) is immutable; only payer/amount/
--- description/category/split/date and the splits change.
-create or replace function public.update_contact_expense_with_splits(
+-- Internal: the body of update_contact_expense_with_splits, run on behalf of
+-- p_actor instead of auth.uid() so the recurring update (no JWT) can reuse it.
+-- Not callable by clients. p_mark_hand_edited flags a schedule-linked row as
+-- edited by hand; the recurring update passes false so rewriting a series
+-- does not freeze it, and an existing mark is never cleared.
+create or replace function public._update_contact_expense(
+  p_actor uuid,
   p_expense_id uuid,
   p_paid_by uuid,
   p_amount numeric,
@@ -1309,15 +1362,15 @@ create or replace function public.update_contact_expense_with_splits(
   p_splits jsonb,
   p_date timestamptz default null,
   p_currency text default 'USD',
-  p_exchange_rate numeric default 1
+  p_exchange_rate numeric default 1,
+  p_mark_hand_edited boolean default true
 )
 returns public.contact_expenses
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
 declare
-  v_uid uuid := auth.uid();
   v_lo uuid;
   v_hi uuid;
   v_expense public.contact_expenses;
@@ -1332,10 +1385,6 @@ declare
   v_rate numeric := coalesce(p_exchange_rate, 1);
   v_base_amount numeric(12, 2);
 begin
-  if v_uid is null then
-    raise exception 'Not authenticated';
-  end if;
-
   select user_lo, user_hi into v_lo, v_hi
   from public.contact_expenses where id = p_expense_id;
 
@@ -1343,7 +1392,7 @@ begin
     raise exception 'Expense not found';
   end if;
 
-  if v_uid <> v_lo and v_uid <> v_hi then
+  if p_actor is distinct from v_lo and p_actor is distinct from v_hi then
     raise exception 'You are not a participant in this expense';
   end if;
 
@@ -1408,7 +1457,11 @@ begin
     date = coalesce(p_date, date),
     currency = v_currency,
     exchange_rate = v_rate,
-    base_amount = v_base_amount
+    base_amount = v_base_amount,
+    hand_edited = case
+      when p_mark_hand_edited and schedule_id is not null then true
+      else hand_edited
+    end
   where id = p_expense_id
   returning * into v_expense;
 
@@ -1428,6 +1481,55 @@ begin
   end loop;
 
   return v_expense;
+end;
+$$;
+
+revoke execute on function public._update_contact_expense(uuid, uuid, uuid, numeric, text, text, public.split_type, jsonb, timestamptz, text, numeric, boolean)
+  from public, anon, authenticated;
+
+-- Edits an existing one-on-one contact expense and replaces its splits. Either
+-- participant may edit (SECURITY DEFINER bypasses the payer-only UPDATE RLS).
+-- The participant pair (user_lo/user_hi) is immutable; only payer/amount/
+-- description/category/split/date and the splits change. A row that belongs to
+-- a recurring schedule is marked hand_edited.
+create or replace function public.update_contact_expense_with_splits(
+  p_expense_id uuid,
+  p_paid_by uuid,
+  p_amount numeric,
+  p_description text,
+  p_category text,
+  p_split_type public.split_type,
+  p_splits jsonb,
+  p_date timestamptz default null,
+  p_currency text default 'USD',
+  p_exchange_rate numeric default 1
+)
+returns public.contact_expenses
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+begin
+  if v_uid is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  return public._update_contact_expense(
+    v_uid,
+    p_expense_id,
+    p_paid_by,
+    p_amount,
+    p_description,
+    p_category,
+    p_split_type,
+    p_splits,
+    p_date,
+    p_currency,
+    p_exchange_rate,
+    true
+  );
 end;
 $$;
 
