@@ -147,6 +147,22 @@ export default async function recurringSchedules({ db, asUser, signUp, rejects, 
   );
   check((await visible(gus)).size === 0, "an outsider sees no schedules");
 
+  // auth.uid() is null here; the policies must not treat that as a match.
+  const countAll = async () =>
+    Number((await db.query(`select count(*) as n from public.recurring_schedules`)).rows[0].n);
+  check(
+    (await asUser("", countAll)) === 0,
+    "an authenticated session with no user id sees no schedules"
+  );
+  await db.exec(`set role anon; select set_config('request.jwt.claim.sub', '', false)`);
+  let anonCount;
+  try {
+    anonCount = await countAll();
+  } finally {
+    await db.exec(`reset role`);
+  }
+  check(anonCount === 0, "the anon role sees no schedules");
+
   const { rows: policies } = await db.query(
     `select cmd from pg_policies where schemaname = 'public' and tablename = 'recurring_schedules'`
   );
