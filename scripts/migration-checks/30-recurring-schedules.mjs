@@ -42,7 +42,7 @@ export default async function recurringSchedules({ db, asUser, signUp, rejects, 
     description: "Rent",
     amount: 100,
     currency: "USD",
-    exchange_rate: 1,
+    last_exchange_rate: 1,
     split_type: "equal",
     splits: JSON.stringify([{ userId: dan, amount: 50, baseAmount: 50 }]),
     start_date: "2026-11-01",
@@ -72,6 +72,29 @@ export default async function recurringSchedules({ db, asUser, signUp, rejects, 
     [gSched]
   );
   check(cursor[0].next_index === 0, "a new schedule's next_index starts at 0");
+
+  // Each occurrence converts at its own day's rate; the schedule keeps only the
+  // last rate it used, which the caller must supply.
+  const { rows: rateCols } = await db.query(`
+    select column_name, data_type, numeric_precision, numeric_scale, is_nullable, column_default
+    from information_schema.columns
+    where table_schema = 'public' and table_name = 'recurring_schedules'
+      and column_name in ('exchange_rate', 'last_exchange_rate')
+  `);
+  const rate = rateCols.find((c) => c.column_name === "last_exchange_rate");
+  check(
+    rateCols.length === 1 && rate && rate.data_type === "numeric" &&
+      rate.numeric_precision === 18 && rate.numeric_scale === 8 &&
+      rate.is_nullable === "NO" && rate.column_default === null,
+    "recurring_schedules has last_exchange_rate numeric(18,8) not null with no default, and no exchange_rate"
+  );
+  check(
+    await violates(
+      insertSchedule({ kind: "group", group_id: groupId, last_exchange_rate: 0 }),
+      "recurring_schedules_last_exchange_rate_check"
+    ),
+    "a zero last_exchange_rate is rejected"
+  );
 
   // Visibility.
   const visible = (uid) =>
@@ -220,7 +243,23 @@ export default async function recurringSchedules({ db, asUser, signUp, rejects, 
       `${table}: a partial unique index on (schedule_id, occurrence_date) where schedule_id is not null`
     );
 
-    await insert(schedule, "2026-11-01");
+    const { rows: handEditedCol } = await db.query(
+      `select data_type, is_nullable, column_default from information_schema.columns
+       where table_schema = 'public' and table_name = $1 and column_name = 'hand_edited'`,
+      [table]
+    );
+    check(
+      handEditedCol.length === 1 && handEditedCol[0].data_type === "boolean" &&
+        handEditedCol[0].is_nullable === "NO" && handEditedCol[0].column_default === "false",
+      `${table}: hand_edited boolean not null default false exists`
+    );
+
+    const { rows: first } = await insert(schedule, "2026-11-01");
+    const { rows: fresh } = await db.query(
+      `select hand_edited from public.${table} where id = $1`,
+      [first[0].id]
+    );
+    check(fresh[0].hand_edited === false, `${table}: a new row is not hand_edited`);
     check(
       await rejects(insert(schedule, "2026-11-01"), "23505"),
       `${table}: a second row for the same (schedule_id, occurrence_date) is rejected`

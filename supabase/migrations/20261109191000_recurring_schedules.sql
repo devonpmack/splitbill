@@ -15,7 +15,7 @@ create table public.recurring_schedules (
   category text,
   amount numeric(12, 2) not null check (amount > 0),
   currency text not null default 'USD',
-  exchange_rate numeric(18, 8) not null default 1 check (exchange_rate > 0),
+  last_exchange_rate numeric(18, 8) not null check (last_exchange_rate > 0),
   split_type public.split_type not null default 'equal',
   splits jsonb not null,
   start_date date not null,
@@ -41,11 +41,13 @@ create index idx_recurring_schedules_active on public.recurring_schedules (start
 
 alter table public.expenses
   add column schedule_id uuid references public.recurring_schedules (id) on delete set null,
-  add column occurrence_date date;
+  add column occurrence_date date,
+  add column hand_edited boolean not null default false;
 
 alter table public.contact_expenses
   add column schedule_id uuid references public.recurring_schedules (id) on delete set null,
-  add column occurrence_date date;
+  add column occurrence_date date,
+  add column hand_edited boolean not null default false;
 
 create unique index idx_expenses_schedule_occurrence on public.expenses (schedule_id, occurrence_date)
   where schedule_id is not null;

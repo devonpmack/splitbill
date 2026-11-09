@@ -30,7 +30,9 @@ create table public.contact_expenses (
   base_amount numeric(12, 2) not null default 0 check (base_amount >= 0),
   -- Set when the row is an occurrence of a recurring schedule.
   schedule_id uuid references public.recurring_schedules (id) on delete set null,
-  occurrence_date date
+  occurrence_date date,
+  -- A member edited this occurrence; schedule edits and stops leave it alone.
+  hand_edited boolean not null default false
 );
 
 create table public.contact_expense_splits (

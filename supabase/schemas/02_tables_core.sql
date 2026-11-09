@@ -36,6 +36,8 @@ create table public.group_members (
 -- RPCs take; each occurrence becomes an ordinary expense row linked back by
 -- (schedule_id, occurrence_date). Declared before expenses, which reference it.
 -- next_index is the n of the next occurrence to create and only ever grows.
+-- last_exchange_rate is the rate the latest occurrence converted at (the
+-- creation-day rate at first); each occurrence converts at its own day's rate.
 create table public.recurring_schedules (
   id uuid primary key default gen_random_uuid(),
   kind text not null check (kind in ('group', 'contact')),
@@ -48,7 +50,7 @@ create table public.recurring_schedules (
   category text,
   amount numeric(12, 2) not null check (amount > 0),
   currency text not null default 'USD',
-  exchange_rate numeric(18, 8) not null default 1 check (exchange_rate > 0),
+  last_exchange_rate numeric(18, 8) not null check (last_exchange_rate > 0),
   split_type public.split_type not null default 'equal',
   splits jsonb not null,
   start_date date not null,
@@ -85,7 +87,9 @@ create table public.expenses (
   base_amount numeric(12, 2) not null default 0 check (base_amount >= 0),
   -- Set when the row is an occurrence of a recurring schedule.
   schedule_id uuid references public.recurring_schedules (id) on delete set null,
-  occurrence_date date
+  occurrence_date date,
+  -- A member edited this occurrence; schedule edits and stops leave it alone.
+  hand_edited boolean not null default false
 );
 
 create table public.expense_splits (
