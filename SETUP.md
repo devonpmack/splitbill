@@ -1,4 +1,4 @@
-# Setting up SplitBill on your own Supabase project
+# Setting up Evenpot on your own Supabase project
 
 About 10 minutes, start to a working sign-in. Everything below is done by you
 in the Supabase dashboard and your own terminal. Nothing in this repo creates an
@@ -21,7 +21,7 @@ for the current limits.
 2. **New organization**: name it as you like (for example `Overture`), type of
    organization as you see fit, plan **Free**.
 3. **New project** in that organization:
-   - Name: `splitbill`
+   - Name: `evenpot`
    - Database password: generate one and keep it in your password manager. You
      need it once, for `supabase link` below. Never put it in a file in this repo.
    - Region: the one closest to the people who will use the app. It cannot be
@@ -84,8 +84,9 @@ Under *Authentication*:
   in; the link confirms the address and then lands on the Site URL below, and
   they go back to the app and sign in by hand.
 - **URL Configuration**:
-  - Site URL: `splitbill://` (the scheme in `app.json`).
-  - Redirect URLs: add `splitbill://**`. For development in Expo Go also add
+  - Site URL: `evenpot://` (the app's new scheme: PR #8 changes it in
+    `app.json`; until that merges `app.json` still says `splitbill`).
+  - Redirect URLs: add `evenpot://**`. For development in Expo Go also add
     `exp://**`.
   These only matter for emailed links (confirmation, and password reset if you
   add it); plain email-and-password sign-in does not use them.
