@@ -7,16 +7,12 @@ account, signs in or holds a key, and nothing secret is ever committed.
 The dashboard's labels move around from time to time. If a menu below is named
 slightly differently, the setting is the same one.
 
-## What it costs
+## Plan
 
-| Plan | Price | What to know |
-| --- | --- | --- |
-| Free | $0 | A project that sees no activity for 7 days is paused. You un-pause it from the dashboard; until then the app cannot reach it. |
-| Pro | $25 a month | Projects are not paused for inactivity. |
-
-Pick Free to start; you can move the organization to Pro later without
-changing anything in the app. Check [supabase.com/pricing](https://supabase.com/pricing)
-for the current numbers before you choose.
+This guide uses the **Free** plan ($0). One thing to know: a Free project that
+sees no activity for 7 days is **paused**, and the app cannot reach it until you
+restore it (below). Check [supabase.com/pricing](https://supabase.com/pricing)
+for the current limits.
 
 ## 1. Create the organization and project
 
@@ -134,6 +130,15 @@ Go. Then:
 3. Realtime: sign up a second account, add it to the group (by the email you
    signed it up with), open the group on a second simulator or device, and add an
    expense on one. It should appear on the other without a refresh.
+
+## If the project is paused
+
+After 7 days without activity the Free plan pauses the project. Sign-in and
+every screen will then fail to connect. To bring it back, open the project in the
+dashboard and choose **Restore**. Regular use of the app keeps it from pausing.
+
+Later, if you want it never to pause, upgrade the organization to Pro
+(currently $25 a month). Nothing in the app or this guide changes.
 
 ## Checking the database without a project
 
