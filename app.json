@@ -23,7 +23,8 @@
         "backgroundColor": "#1B998B"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.splitbill.app"
+      "package": "com.splitbill.app",
+      "versionCode": 1
     },
     "web": {
       "favicon": "./assets/favicon.png",
