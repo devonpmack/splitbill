@@ -4,6 +4,6 @@
     <clipPath id="al"><rect x="217" y="217" width="281" height="590"/></clipPath>
     <clipPath id="ar"><rect x="526.0" y="217" width="281" height="590"/></clipPath>
   </defs>
-  <g clip-path="url(#al)"><circle cx="512" cy="512" r="290" fill="#FFFFFF"/><circle cx="512" cy="512" r="190.0" fill="none" stroke="#1B998B" stroke-opacity="0.35" stroke-width="12.5"/></g>
-  <g clip-path="url(#ar)"><circle cx="512" cy="512" r="290" fill="#CFF3EE"/><circle cx="512" cy="512" r="190.0" fill="none" stroke="#1B998B" stroke-opacity="0.35" stroke-width="12.5"/></g>
+  <g clip-path="url(#al)"><circle cx="512" cy="512" r="290" fill="#FFFFFF"/><circle cx="512" cy="512" r="190.0" fill="none" stroke="#2563EB" stroke-opacity="0.35" stroke-width="12.5"/></g>
+  <g clip-path="url(#ar)"><circle cx="512" cy="512" r="290" fill="#DBEAFE"/><circle cx="512" cy="512" r="190.0" fill="none" stroke="#2563EB" stroke-opacity="0.35" stroke-width="12.5"/></g>
 </svg>
