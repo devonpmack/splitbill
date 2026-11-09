@@ -193,7 +193,7 @@ describe("Activity screen", () => {
         {
           id: "p1",
           amount: 20,
-          created_at: "2024-01-05",
+          date: "2024-01-05",
           paid_by: "u1",
           paid_to: "u2",
           group_id: "g1",
@@ -211,13 +211,59 @@ describe("Activity screen", () => {
     expect(screen.getByText("$20.00")).toBeTruthy();
   });
 
+  it("dates a payment by its date, not when it was recorded", async () => {
+    setPayments({
+      data: [
+        {
+          id: "p1",
+          amount: 20,
+          created_at: "2023-12-01T12:00:00Z",
+          date: "2024-02-01T12:00:00Z",
+          paid_by: "u1",
+          paid_to: "u2",
+          group_id: "g1",
+          note: null,
+          payer: { full_name: "Me" },
+          payee: { full_name: "Bob" },
+          groups: { name: "Trip" },
+        },
+      ],
+    });
+    setContactPayments({
+      data: [
+        {
+          id: "cp1",
+          amount: 5,
+          created_at: "2023-11-01T12:00:00Z",
+          date: "2024-03-01T12:00:00Z",
+          paid_by: "u1",
+          paid_to: "u2",
+          note: null,
+          payer: { full_name: "Me" },
+          payee: { full_name: "Bob" },
+        },
+      ],
+    });
+    await renderWithPaper(<Activity />);
+
+    expect(
+      screen.getByText(new Date("2024-02-01T12:00:00Z").toLocaleDateString())
+    ).toBeTruthy();
+    expect(
+      screen.getByText(new Date("2024-03-01T12:00:00Z").toLocaleDateString())
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(new Date("2023-12-01T12:00:00Z").toLocaleDateString())
+    ).toBeNull();
+  });
+
   it("shows a payment received by the current user", async () => {
     setPayments({
       data: [
         {
           id: "p2",
           amount: 15,
-          created_at: "2024-01-06",
+          date: "2024-01-06",
           paid_by: "u3",
           paid_to: "u1",
           group_id: "g2",
@@ -298,7 +344,7 @@ describe("Activity screen", () => {
           id: "cp1",
           amount: 18,
           currency: "USD",
-          created_at: "2024-01-09",
+          date: "2024-01-09",
           paid_by: "u1",
           paid_to: "u2",
           note: "rent",
@@ -321,7 +367,7 @@ describe("Activity screen", () => {
           id: "cp2",
           amount: 9,
           currency: "USD",
-          created_at: "2024-01-10",
+          date: "2024-01-10",
           paid_by: "u3",
           paid_to: "u1",
           note: null,
@@ -427,7 +473,7 @@ describe("Activity screen", () => {
         {
           id: "p1",
           amount: 20,
-          created_at: "2024-01-05",
+          date: "2024-01-05",
           paid_by: "u1",
           paid_to: "u2",
           group_id: "g1",
@@ -450,7 +496,7 @@ describe("Activity screen", () => {
         {
           id: "p1",
           amount: 20,
-          created_at: "2024-01-05",
+          date: "2024-01-05",
           paid_by: "u1",
           paid_to: "u2",
           group_id: "g1",
@@ -513,7 +559,7 @@ describe("Activity screen", () => {
           id: "cp1",
           amount: 18,
           currency: "USD",
-          created_at: "2024-01-09",
+          date: "2024-01-09",
           paid_by: "u1",
           paid_to: "u2",
           note: "rent",

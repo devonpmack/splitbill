@@ -773,7 +773,7 @@ export interface ActivityPayment {
   id: string;
   amount: number;
   currency: string;
-  created_at: string;
+  date: string;
   paid_by: string;
   paid_to: string;
   group_id: string;
@@ -802,7 +802,7 @@ export interface ActivityContactPayment {
   id: string;
   amount: number;
   currency: string;
-  created_at: string;
+  date: string;
   paid_by: string;
   paid_to: string;
   note: string | null;

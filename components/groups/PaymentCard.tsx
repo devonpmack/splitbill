@@ -28,7 +28,7 @@ export function PaymentCard({
       ? "you"
       : (payment.payee?.full_name ?? "someone");
 
-  const date = new Date(payment.created_at);
+  const date = new Date(payment.date);
   const monthDay = date.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",

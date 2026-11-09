@@ -42,7 +42,7 @@ describe("useGroupPayments", () => {
       expect.stringContaining("payee:profiles!payments_paid_to_fkey")
     );
     expect(builder.eq).toHaveBeenCalledWith("group_id", "g1");
-    expect(builder.order).toHaveBeenCalledWith("created_at", {
+    expect(builder.order).toHaveBeenCalledWith("date", {
       ascending: false,
     });
     expect(result.current.data).toEqual(payments);
@@ -74,7 +74,7 @@ describe("useGroupPayments", () => {
 });
 
 describe("useCreatePayment", () => {
-  it("records a payment through the RPC with a null note default", async () => {
+  it("records a payment through the RPC with null note and date defaults", async () => {
     mockedSupabase.rpc.mockResolvedValue({ data: { id: "p1" }, error: null });
 
     const { result } = await renderHook(() => useCreatePayment(), {
@@ -100,8 +100,32 @@ describe("useCreatePayment", () => {
       p_amount: 5,
       p_note: null,
       p_currency: null,
+      p_date: null,
     });
     expect(mockedSupabase.from).not.toHaveBeenCalled();
+  });
+
+  it("sends the picked date when one is given", async () => {
+    mockedSupabase.rpc.mockResolvedValue({ data: { id: "p1" }, error: null });
+
+    const { result } = await renderHook(() => useCreatePayment(), {
+      wrapper: createWrapper(),
+    });
+
+    await actAsync(() =>
+      result.current.mutateAsync({
+        groupId: "g1",
+        paidBy: "u1",
+        paidTo: "u2",
+        amount: 5,
+        date: "2026-11-12T00:00:00-05:00",
+      })
+    );
+
+    expect(mockedSupabase.rpc).toHaveBeenCalledWith(
+      "create_payment",
+      expect.objectContaining({ p_date: "2026-11-12T00:00:00-05:00" })
+    );
   });
 
   it("propagates RPC errors", async () => {
@@ -154,8 +178,33 @@ describe("useUpdatePayment", () => {
       p_paid_to: "u1",
       p_amount: 7,
       p_note: "venmo",
+      p_date: null,
     });
     expect(mockedSupabase.from).not.toHaveBeenCalled();
+  });
+
+  it("sends the picked date when one is given", async () => {
+    mockedSupabase.rpc.mockResolvedValue({ data: { id: "p1" }, error: null });
+
+    const { result } = await renderHook(() => useUpdatePayment(), {
+      wrapper: createWrapper(),
+    });
+
+    await actAsync(() =>
+      result.current.mutateAsync({
+        paymentId: "p1",
+        groupId: "g1",
+        paidBy: "u2",
+        paidTo: "u1",
+        amount: 7,
+        date: "2026-11-12T00:00:00-05:00",
+      })
+    );
+
+    expect(mockedSupabase.rpc).toHaveBeenCalledWith(
+      "update_payment",
+      expect.objectContaining({ p_date: "2026-11-12T00:00:00-05:00" })
+    );
   });
 
   it("propagates RPC errors", async () => {

@@ -21,7 +21,7 @@ export function useRecentContactPayments() {
           id,
           amount,
           currency,
-          created_at,
+          date,
           paid_by,
           paid_to,
           note,
@@ -29,7 +29,7 @@ export function useRecentContactPayments() {
           payee:profiles!contact_payments_paid_to_fkey (*)
         `
         )
-        .order("created_at", { ascending: false })
+        .order("date", { ascending: false })
         .limit(50);
 
       if (error) throw error;
@@ -58,7 +58,7 @@ export function useContactPayments(contactUserId: string) {
         )
         .eq("user_lo", lo)
         .eq("user_hi", hi)
-        .order("created_at", { ascending: false });
+        .order("date", { ascending: false });
 
       if (error) throw error;
       return data as unknown as ContactPaymentWithProfiles[];
@@ -74,6 +74,9 @@ interface CreateContactPaymentInput {
   amount: number;
   note?: string;
   currency?: string;
+  // Start of the picked local day; omitted for today (create) or an unchanged
+  // day (edit), so the server defaults to now() or keeps the stored date.
+  date?: string;
 }
 
 export function useCreateContactPayment() {
@@ -91,6 +94,7 @@ export function useCreateContactPayment() {
         p_amount: input.amount,
         p_note: input.note ?? null,
         p_currency: input.currency ?? null,
+        p_date: input.date ?? null,
       });
 
       if (error) throw new Error(error.message);
@@ -123,6 +127,7 @@ export function useUpdateContactPayment() {
         p_paid_to: input.paidTo,
         p_amount: input.amount,
         p_note: input.note ?? null,
+        p_date: input.date ?? null,
       });
 
       if (error) throw new Error(error.message);

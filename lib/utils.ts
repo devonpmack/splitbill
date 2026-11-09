@@ -255,7 +255,7 @@ export function buildActivityFeed(sources: {
     ...(sources.payments ?? []).map((payload) => ({
       kind: "payment" as const,
       id: payload.id,
-      ts: payload.created_at,
+      ts: payload.date,
       payload,
     })),
     ...(sources.contactExpenses ?? []).map((payload) => ({
@@ -267,7 +267,7 @@ export function buildActivityFeed(sources: {
     ...(sources.contactPayments ?? []).map((payload) => ({
       kind: "contact-payment" as const,
       id: payload.id,
-      ts: payload.created_at,
+      ts: payload.date,
       payload,
     })),
     ...(sources.simplifyEvents ?? []).map((payload) => ({

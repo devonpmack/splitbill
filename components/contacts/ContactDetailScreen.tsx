@@ -121,7 +121,7 @@ export function ContactDetailScreen({
     ...(payments ?? []).map(
       (payment): ActivityListItem => ({
         kind: "payment",
-        ts: payment.created_at,
+        ts: payment.date,
         payload: payment,
       })
     ),

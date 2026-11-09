@@ -101,9 +101,9 @@ describe("buildActivityFeed", () => {
   it("merges every source into one newest-first feed", () => {
     const feed = buildActivityFeed({
       expenses: [{ id: "e1", date: "2024-01-02" }] as never,
-      payments: [{ id: "p1", created_at: "2024-01-05" }] as never,
+      payments: [{ id: "p1", date: "2024-01-05" }] as never,
       contactExpenses: [{ id: "ce1", date: "2024-01-01" }] as never,
-      contactPayments: [{ id: "cp1", created_at: "2024-01-04" }] as never,
+      contactPayments: [{ id: "cp1", date: "2024-01-04" }] as never,
       simplifyEvents: [{ id: "s1", created_at: "2024-01-03" }] as never,
     });
 
@@ -123,7 +123,21 @@ describe("buildActivityFeed", () => {
       "e1",
       "ce1",
     ]);
-    expect(feed[0].payload).toEqual({ id: "p1", created_at: "2024-01-05" });
+    expect(feed[0].payload).toEqual({ id: "p1", date: "2024-01-05" });
+  });
+
+  it("orders payments by their date, not when they were recorded", () => {
+    const feed = buildActivityFeed({
+      expenses: [{ id: "e1", date: "2024-01-05" }] as never,
+      payments: [
+        { id: "p1", created_at: "2024-01-01", date: "2024-01-09" },
+      ] as never,
+      contactPayments: [
+        { id: "cp1", created_at: "2024-01-08", date: "2024-01-02" },
+      ] as never,
+    });
+
+    expect(feed.map((item) => item.id)).toEqual(["p1", "e1", "cp1"]);
   });
 
   it("returns an empty feed when every source is missing", () => {

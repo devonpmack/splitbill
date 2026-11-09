@@ -20,7 +20,7 @@ export function useRecentPayments() {
           id,
           amount,
           currency,
-          created_at,
+          date,
           paid_by,
           paid_to,
           group_id,
@@ -30,7 +30,7 @@ export function useRecentPayments() {
           groups (name)
         `
         )
-        .order("created_at", { ascending: false })
+        .order("date", { ascending: false })
         .limit(50);
 
       if (error) throw error;
@@ -54,7 +54,7 @@ export function useGroupPayments(groupId: string) {
         `
         )
         .eq("group_id", groupId)
-        .order("created_at", { ascending: false });
+        .order("date", { ascending: false });
 
       if (error) throw error;
       return data as unknown as PaymentWithProfiles[];
@@ -70,6 +70,9 @@ interface CreatePaymentInput {
   amount: number;
   note?: string;
   currency?: string;
+  // Start of the picked local day; omitted for today (create) or an unchanged
+  // day (edit), so the server defaults to now() or keeps the stored date.
+  date?: string;
 }
 
 export function useCreatePayment() {
@@ -87,6 +90,7 @@ export function useCreatePayment() {
         p_amount: input.amount,
         p_note: input.note ?? null,
         p_currency: input.currency ?? null,
+        p_date: input.date ?? null,
       });
 
       if (error) throw new Error(error.message);
@@ -105,6 +109,7 @@ interface UpdatePaymentInput {
   paidTo: string;
   amount: number;
   note?: string;
+  date?: string;
 }
 
 export function useUpdatePayment() {
@@ -120,6 +125,7 @@ export function useUpdatePayment() {
         p_paid_to: input.paidTo,
         p_amount: input.amount,
         p_note: input.note ?? null,
+        p_date: input.date ?? null,
       });
 
       if (error) throw new Error(error.message);

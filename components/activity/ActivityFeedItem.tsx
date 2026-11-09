@@ -215,7 +215,7 @@ function PaymentRow({
       title={`${payerLabel(item.paid_by, currentUserId, item.payer)} paid ${payeeName}`}
       subtitle={`in ${item.groups?.name ?? "a group"}`}
       note={item.note}
-      date={item.created_at}
+      date={item.date}
       onPress={() => router.push(`/activity/group/${item.group_id}`)}
       trailing={{
         kind: "amount",
@@ -254,7 +254,7 @@ function ContactPaymentRow({
       icon="cash-fast"
       title={`${payerLabel(item.paid_by, currentUserId, item.payer)} paid ${payeeName}`}
       note={item.note}
-      date={item.created_at}
+      date={item.date}
       onPress={() =>
         router.push({
           pathname: "/activity/contacts/[id]",

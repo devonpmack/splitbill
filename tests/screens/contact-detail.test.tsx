@@ -99,6 +99,7 @@ const paymentsFixture = [
     payee: { full_name: "Bob" },
     note: "Venmo",
     created_at: "2024-01-03",
+    date: "2024-01-03",
   },
 ];
 
@@ -264,6 +265,27 @@ describe("ContactDetail screen", () => {
       pathname: "/contacts/settle-up",
       params: { contactUserId: "user-2", paymentId: "cp-1" },
     });
+  });
+
+  it("places and dates a payment by its date, not when it was recorded", async () => {
+    setup({
+      expenses: [{ ...expensesFixture[0], date: "2024-01-15T12:00:00Z" }],
+      payments: [
+        {
+          ...paymentsFixture[0],
+          created_at: "2023-12-01T12:00:00Z",
+          date: "2024-02-01T12:00:00Z",
+        },
+      ],
+    });
+    await renderWithPaper(<ContactDetail />);
+
+    const rows = screen
+      .getAllByText(/^(You paid Bob \$20\.00|Dinner)$/)
+      .map((node) => [node.props.children].flat().join(""));
+    expect(rows).toEqual(["You paid Bob $20.00", "Dinner"]);
+    expect(screen.getByText("Feb 1")).toBeTruthy();
+    expect(screen.queryByText("Dec 1")).toBeNull();
   });
 
   it("confirms and deletes a one-on-one payment on confirm", async () => {
