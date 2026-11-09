@@ -11,6 +11,8 @@ module.exports = tseslint.config(
       "dist/**",
       "web-build/**",
       "supabase/**",
+      // Plain Node scripts, not app code.
+      "scripts/**",
     ],
   },
   js.configs.recommended,

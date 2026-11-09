@@ -27,6 +27,9 @@ jobs:
       - name: Type-check
         run: npx tsc --noEmit
 
+      - name: Check migrations build an empty database
+        run: npm run check:migrations
+
       - name: Run tests with coverage
         run: npm run test:coverage
 

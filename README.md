@@ -36,6 +36,9 @@ npm install
 
 ### 2. Set up Supabase
 
+Step-by-step instructions for a new project (org, region, auth settings, keys,
+cost) are in [`SETUP.md`](SETUP.md). The short version:
+
 The database is defined declaratively in `supabase/schemas/`; migrations under
 `supabase/migrations/` are generated from it. See
 [`supabase/schemas/README.md`](supabase/schemas/README.md) for the full
