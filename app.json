@@ -1,13 +1,13 @@
 {
   "expo": {
-    "name": "SplitBill",
+    "name": "Evenpot",
     "slug": "splitbill",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "scheme": "splitbill",
+    "scheme": "evenpot",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -15,7 +15,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.splitbill.app"
+      "bundleIdentifier": "com.overtureinteractive.evenpot"
     },
     "android": {
       "adaptiveIcon": {
@@ -23,7 +23,7 @@
         "backgroundColor": "#1B998B"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.splitbill.app",
+      "package": "com.overtureinteractive.evenpot",
       "versionCode": 1
     },
     "web": {
