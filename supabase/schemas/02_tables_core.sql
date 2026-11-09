@@ -62,6 +62,8 @@ create table public.recurring_schedules (
   stopped_at timestamptz,
   stop_reason text,
   created_at timestamptz not null default now(),
+  last_error text,
+  failed_runs int not null default 0,
   check (user_lo < user_hi),
   constraint recurring_schedules_scope_check check (
     (kind = 'group' and group_id is not null and user_lo is null and user_hi is null)

@@ -73,6 +73,31 @@ export default async function recurringSchedules({ db, asUser, signUp, rejects, 
   );
   check(cursor[0].next_index === 0, "a new schedule's next_index starts at 0");
 
+  const { rows: failureCols } = await db.query(`
+    select column_name, data_type, is_nullable, column_default
+    from information_schema.columns
+    where table_schema = 'public' and table_name = 'recurring_schedules'
+      and column_name in ('last_error', 'failed_runs')
+  `);
+  const col = (name) => failureCols.find((c) => c.column_name === name);
+  check(
+    col("last_error")?.data_type === "text" && col("last_error")?.is_nullable === "YES",
+    "recurring_schedules has a nullable last_error text"
+  );
+  check(
+    col("failed_runs")?.data_type === "integer" && col("failed_runs")?.is_nullable === "NO" &&
+      col("failed_runs")?.column_default === "0",
+    "recurring_schedules has failed_runs int not null default 0"
+  );
+  const { rows: fresh } = await db.query(
+    `select last_error, failed_runs from public.recurring_schedules where id = $1`,
+    [gSched]
+  );
+  check(
+    fresh[0].last_error === null && fresh[0].failed_runs === 0,
+    "a new schedule has no last_error and failed_runs 0"
+  );
+
   // Each occurrence converts at its own day's rate; the schedule keeps only the
   // last rate it used, which the caller must supply.
   const { rows: rateCols } = await db.query(`
