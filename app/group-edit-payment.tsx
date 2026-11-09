@@ -4,6 +4,7 @@ import { Button } from "react-native-paper";
 import { useGroup } from "@/lib/queries/useGroups";
 import { useGroupPayments, useUpdatePayment } from "@/lib/queries/usePayments";
 import { useAuth } from "@/lib/auth";
+import { useDayPick } from "@/lib/useDayPick";
 import { useHydrateOnce } from "@/lib/useHydrateOnce";
 import { getErrorMessage } from "@/lib/utils";
 import { useSnackbar } from "@/lib/snackbar";
@@ -32,6 +33,7 @@ export default function EditPayment() {
 
   const members = group?.group_members ?? [];
   const payment = payments?.find((p) => p.id === paymentId);
+  const day = useDayPick(payment?.date);
 
   useHydrateOnce(!!payment, () => {
     if (!payment) return;
@@ -59,6 +61,10 @@ export default function EditPayment() {
       showError("Please enter a valid amount");
       return;
     }
+    if (day.isInvalid) {
+      showError("Please enter a valid date");
+      return;
+    }
 
     try {
       await updatePayment.mutateAsync({
@@ -68,6 +74,7 @@ export default function EditPayment() {
         paidTo,
         amount: totalAmount,
         note: note.trim() || undefined,
+        date: day.dateParam,
       });
       showSuccess("Payment updated!");
       router.back();
@@ -101,6 +108,8 @@ export default function EditPayment() {
         onAmountChange={setAmount}
         note={note}
         onNoteChange={setNote}
+        date={day.value}
+        onDateChange={day.onChange}
         amountSectionLabel="Amount"
       />
 

@@ -1,5 +1,6 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react-native";
-import { renderWithPaper } from "../helpers/testUtils";
+import { freezeNow, renderWithPaper } from "../helpers/testUtils";
+import { startOfLocalDayISO } from "@/lib/dates";
 import { ContactSettleUpScreen as ContactSettleUp } from "@/components/contacts/ContactSettleUpScreen";
 
 const mockBack = jest.fn();
@@ -139,6 +140,29 @@ describe("ContactSettleUp screen (create)", () => {
     );
   });
 
+  describe("date", () => {
+    beforeEach(() => freezeNow(new Date(2026, 10, 9, 15, 0)));
+    afterEach(() => jest.useRealTimers());
+
+    it("records a payment on a picked future day", async () => {
+      await renderWithPaper(<ContactSettleUp />);
+
+      await fireEvent.changeText(screen.getByTestId("date-field"), "11/12/2026");
+      expect(
+        screen.getByText("Counts toward balances from Nov 12, 2026.")
+      ).toBeTruthy();
+      await fireEvent.press(screen.getByText("Record Payment"));
+
+      await waitFor(() =>
+        expect(mockCreateAsync).toHaveBeenCalledWith(
+          expect.objectContaining({
+            date: startOfLocalDayISO(new Date(2026, 10, 12)),
+          })
+        )
+      );
+    });
+  });
+
   it("rejects an invalid amount", async () => {
     await renderWithPaper(<ContactSettleUp />);
 
@@ -161,6 +185,7 @@ describe("ContactSettleUp screen (edit)", () => {
           paid_to: "user-2",
           amount: 8,
           note: "cash",
+          date: "2026-11-05T15:00:00Z",
         },
       ],
     });
@@ -183,6 +208,37 @@ describe("ContactSettleUp screen (edit)", () => {
       amount: 8,
       note: "cash",
       currency: "USD",
+    });
+  });
+
+  describe("date", () => {
+    beforeEach(() => freezeNow(new Date(2026, 10, 9, 15, 0)));
+    afterEach(() => jest.useRealTimers());
+
+    it("prefills the stored day and sends no date when unchanged", async () => {
+      await renderWithPaper(<ContactSettleUp />);
+
+      expect(screen.getByTestId("date-field")).toHaveProp("value", "11/05/2026");
+      await fireEvent.press(screen.getByText("Save Changes"));
+
+      await waitFor(() => expect(mockUpdateAsync).toHaveBeenCalledTimes(1));
+      expect(mockUpdateAsync.mock.calls[0][0].date).toBeUndefined();
+    });
+
+    it("sends the start of a newly picked day", async () => {
+      await renderWithPaper(<ContactSettleUp />);
+
+      await fireEvent.changeText(screen.getByTestId("date-field"), "10/30/2026");
+      await fireEvent.press(screen.getByText("Save Changes"));
+
+      await waitFor(() =>
+        expect(mockUpdateAsync).toHaveBeenCalledWith(
+          expect.objectContaining({
+            paymentId: "cp-1",
+            date: startOfLocalDayISO(new Date(2026, 9, 30)),
+          })
+        )
+      );
     });
   });
 });

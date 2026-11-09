@@ -2,6 +2,7 @@ import { useState } from "react";
 import { router, Stack } from "expo-router";
 import { Button, TextInput } from "react-native-paper";
 import { useAuth } from "@/lib/auth";
+import { useDayPick } from "@/lib/useDayPick";
 import { useHydrateOnce } from "@/lib/useHydrateOnce";
 import {
   computeSplits,
@@ -11,6 +12,7 @@ import {
 import { resolveEntryRate } from "@/lib/currency";
 import { useExchangeRates } from "@/lib/exchange-rates";
 import { useSnackbar } from "@/lib/snackbar";
+import { DateField } from "@/components/DateField";
 import { FormScreen } from "@/components/FormScreen";
 import { ExpenseAmountCurrencyInput } from "@/components/groups/ExpenseAmountCurrencyInput";
 import { PaidByPicker } from "@/components/groups/PaidByPicker";
@@ -26,6 +28,7 @@ export type EditableExpense = {
   split_type: SplitType;
   currency: string;
   exchange_rate: number;
+  date?: string;
   expense_splits?: { user_id: string; amount: number }[] | null;
 };
 
@@ -37,6 +40,7 @@ export type ExpenseFormSubmission = {
   splits: { userId: string; amount: number }[];
   currency: string;
   exchangeRate: number;
+  date?: string;
 };
 
 type ExpenseFormScreenProps = {
@@ -76,6 +80,7 @@ export function ExpenseFormScreen({
   const [excludedMemberIds, setExcludedMemberIds] = useState<string[]>([]);
   const [currency, setCurrency] = useState<string | null>(null);
 
+  const day = useDayPick(isEdit ? existingExpense?.date : undefined);
   const entryCurrency = currency ?? baseCurrency;
 
   useHydrateOnce(isEdit && !!existingExpense && members.length > 0, () => {
@@ -148,6 +153,10 @@ export function ExpenseFormScreen({
       showError("Please select who paid");
       return;
     }
+    if (day.isInvalid) {
+      showError("Please enter a valid date");
+      return;
+    }
     if (isForeignCurrency && !hasExchangeRate) {
       showError(
         "Exchange rates aren't available for this currency pair. Try again when rates are cached."
@@ -176,6 +185,7 @@ export function ExpenseFormScreen({
         splits: result.splits,
         currency: entryCurrency,
         exchangeRate,
+        date: day.dateParam,
       });
       router.back();
     } catch (error) {
@@ -219,6 +229,8 @@ export function ExpenseFormScreen({
         hasExchangeRate={hasExchangeRate}
         baseCurrencyLabel={baseCurrencyLabel}
       />
+
+      <DateField value={day.value} onChange={day.onChange} />
 
       <PaidByPicker
         members={members}

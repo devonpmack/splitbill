@@ -1,5 +1,6 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react-native";
-import { renderWithPaper } from "../helpers/testUtils";
+import { freezeNow, renderWithPaper } from "../helpers/testUtils";
+import { startOfLocalDayISO } from "@/lib/dates";
 import SettleUp from "@/app/group-settle-up";
 
 const mockBack = jest.fn();
@@ -113,6 +114,44 @@ describe("SettleUp screen", () => {
     );
     expect(mockShowSuccess).toHaveBeenCalledWith("Payment recorded!");
     expect(mockBack).toHaveBeenCalled();
+  });
+
+  describe("date", () => {
+    beforeEach(() => freezeNow(new Date(2026, 10, 9, 15, 0)));
+    afterEach(() => jest.useRealTimers());
+
+    it("records a payment on a picked future day", async () => {
+      await renderWithPaper(<SettleUp />);
+
+      await fireEvent.press(screen.getByTestId("debt-card-u1-u2"));
+      expect(screen.getByTestId("date-field")).toHaveProp("value", "11/09/2026");
+      await fireEvent.changeText(screen.getByTestId("date-field"), "11/12/2026");
+      expect(
+        screen.getByText("Counts toward balances from Nov 12, 2026.")
+      ).toBeTruthy();
+      await fireEvent.press(screen.getByText("Record Payment"));
+
+      await waitFor(() =>
+        expect(mockPayAsync).toHaveBeenCalledWith(
+          expect.objectContaining({
+            date: startOfLocalDayISO(new Date(2026, 10, 12)),
+          })
+        )
+      );
+    });
+
+    it("refuses to record a payment with an incomplete date", async () => {
+      await renderWithPaper(<SettleUp />);
+
+      await fireEvent.press(screen.getByTestId("debt-card-u1-u2"));
+      await fireEvent(screen.getByTestId("date-field"), "change", {
+        nativeEvent: { text: "11/1" },
+      });
+      await fireEvent.press(screen.getByText("Record Payment"));
+
+      expect(mockShowError).toHaveBeenCalledWith("Please enter a valid date");
+      expect(mockPayAsync).not.toHaveBeenCalled();
+    });
   });
 
   it("uses raw pairwise edges when simplification is off", async () => {
