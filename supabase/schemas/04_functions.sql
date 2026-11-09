@@ -572,7 +572,12 @@ begin
 end;
 $$;
 
-create or replace function public.create_expense_with_splits(
+-- Internal: the body of create_expense_with_splits, run on behalf of p_actor
+-- instead of auth.uid() so the recurring engine (no JWT) can reuse it. Not
+-- callable by clients; p_schedule_id / p_occurrence_date link the row to a
+-- recurring schedule.
+create or replace function public._insert_group_expense(
+  p_actor uuid,
   p_group_id uuid,
   p_paid_by uuid,
   p_amount numeric,
@@ -582,15 +587,16 @@ create or replace function public.create_expense_with_splits(
   p_splits jsonb,
   p_date timestamptz default null,
   p_currency text default 'USD',
-  p_exchange_rate numeric default 1
+  p_exchange_rate numeric default 1,
+  p_schedule_id uuid default null,
+  p_occurrence_date date default null
 )
 returns public.expenses
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
 declare
-  v_uid uuid := auth.uid();
   v_expense public.expenses;
   v_split jsonb;
   v_split_user uuid;
@@ -603,11 +609,7 @@ declare
   v_rate numeric := coalesce(p_exchange_rate, 1);
   v_base_amount numeric(12, 2);
 begin
-  if v_uid is null then
-    raise exception 'Not authenticated';
-  end if;
-
-  if not public.is_group_member(p_group_id, v_uid) then
+  if not public.is_group_member(p_group_id, p_actor) then
     raise exception 'You are not a member of this group';
   end if;
 
@@ -672,7 +674,9 @@ begin
     date,
     currency,
     exchange_rate,
-    base_amount
+    base_amount,
+    schedule_id,
+    occurrence_date
   )
   values (
     p_group_id,
@@ -684,7 +688,9 @@ begin
     coalesce(p_date, now()),
     v_currency,
     v_rate,
-    v_base_amount
+    v_base_amount,
+    p_schedule_id,
+    p_occurrence_date
   )
   returning * into v_expense;
 
@@ -702,6 +708,49 @@ begin
   end loop;
 
   return v_expense;
+end;
+$$;
+
+revoke execute on function public._insert_group_expense(uuid, uuid, uuid, numeric, text, text, public.split_type, jsonb, timestamptz, text, numeric, uuid, date)
+  from public, anon, authenticated;
+
+create or replace function public.create_expense_with_splits(
+  p_group_id uuid,
+  p_paid_by uuid,
+  p_amount numeric,
+  p_description text,
+  p_category text,
+  p_split_type public.split_type,
+  p_splits jsonb,
+  p_date timestamptz default null,
+  p_currency text default 'USD',
+  p_exchange_rate numeric default 1
+)
+returns public.expenses
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+begin
+  if v_uid is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  return public._insert_group_expense(
+    v_uid,
+    p_group_id,
+    p_paid_by,
+    p_amount,
+    p_description,
+    p_category,
+    p_split_type,
+    p_splits,
+    p_date,
+    p_currency,
+    p_exchange_rate
+  );
 end;
 $$;
 
@@ -1045,7 +1094,12 @@ begin
 end;
 $$;
 
-create or replace function public.create_contact_expense_with_splits(
+-- Internal: the body of create_contact_expense_with_splits, run on behalf of p_actor
+-- instead of auth.uid() so the recurring engine (no JWT) can reuse it. Not
+-- callable by clients; p_schedule_id / p_occurrence_date link the row to a
+-- recurring schedule.
+create or replace function public._insert_contact_expense(
+  p_actor uuid,
   p_contact_user_id uuid,
   p_paid_by uuid,
   p_amount numeric,
@@ -1055,15 +1109,16 @@ create or replace function public.create_contact_expense_with_splits(
   p_splits jsonb,
   p_date timestamptz default null,
   p_currency text default 'USD',
-  p_exchange_rate numeric default 1
+  p_exchange_rate numeric default 1,
+  p_schedule_id uuid default null,
+  p_occurrence_date date default null
 )
 returns public.contact_expenses
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
 declare
-  v_uid uuid := auth.uid();
   v_lo uuid;
   v_hi uuid;
   v_expense public.contact_expenses;
@@ -1078,22 +1133,18 @@ declare
   v_rate numeric := coalesce(p_exchange_rate, 1);
   v_base_amount numeric(12, 2);
 begin
-  if v_uid is null then
-    raise exception 'Not authenticated';
-  end if;
-
-  if p_contact_user_id is null or p_contact_user_id = v_uid then
+  if p_contact_user_id is null or p_contact_user_id = p_actor then
     raise exception 'Invalid contact';
   end if;
 
   if not exists (
     select 1 from public.contacts
-    where owner_id = v_uid and contact_user_id = p_contact_user_id
+    where owner_id = p_actor and contact_user_id = p_contact_user_id
   ) then
     raise exception 'You can only add expenses with accepted contacts';
   end if;
 
-  if p_paid_by <> v_uid and p_paid_by <> p_contact_user_id then
+  if p_paid_by <> p_actor and p_paid_by <> p_contact_user_id then
     raise exception 'Expense payer must be you or the contact';
   end if;
 
@@ -1109,12 +1160,12 @@ begin
     raise exception 'Expense description is required';
   end if;
 
-  if v_uid < p_contact_user_id then
-    v_lo := v_uid;
+  if p_actor < p_contact_user_id then
+    v_lo := p_actor;
     v_hi := p_contact_user_id;
   else
     v_lo := p_contact_user_id;
-    v_hi := v_uid;
+    v_hi := p_actor;
   end if;
 
   v_base_amount := round(p_amount * v_rate, 2);
@@ -1163,7 +1214,9 @@ begin
     date,
     currency,
     exchange_rate,
-    base_amount
+    base_amount,
+    schedule_id,
+    occurrence_date
   )
   values (
     p_paid_by,
@@ -1176,7 +1229,9 @@ begin
     coalesce(p_date, now()),
     v_currency,
     v_rate,
-    v_base_amount
+    v_base_amount,
+    p_schedule_id,
+    p_occurrence_date
   )
   returning * into v_expense;
 
@@ -1194,6 +1249,49 @@ begin
   end loop;
 
   return v_expense;
+end;
+$$;
+
+revoke execute on function public._insert_contact_expense(uuid, uuid, uuid, numeric, text, text, public.split_type, jsonb, timestamptz, text, numeric, uuid, date)
+  from public, anon, authenticated;
+
+create or replace function public.create_contact_expense_with_splits(
+  p_contact_user_id uuid,
+  p_paid_by uuid,
+  p_amount numeric,
+  p_description text,
+  p_category text,
+  p_split_type public.split_type,
+  p_splits jsonb,
+  p_date timestamptz default null,
+  p_currency text default 'USD',
+  p_exchange_rate numeric default 1
+)
+returns public.contact_expenses
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+begin
+  if v_uid is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  return public._insert_contact_expense(
+    v_uid,
+    p_contact_user_id,
+    p_paid_by,
+    p_amount,
+    p_description,
+    p_category,
+    p_split_type,
+    p_splits,
+    p_date,
+    p_currency,
+    p_exchange_rate
+  );
 end;
 $$;
 

@@ -206,10 +206,31 @@ describe("SQL security guards", () => {
 
   it("gates one-on-one expense creation on an accepted contact", () => {
     const functions = readSchema("04_functions.sql");
-    const body = functionBody(functions, "create_contact_expense_with_splits");
+    const helper = functionBody(functions, "_insert_contact_expense");
+    const wrapper = functionBody(functions, "create_contact_expense_with_splits");
 
-    expect(body).toMatch(/You can only add expenses with accepted contacts/i);
-    expect(body).toMatch(/owner_id = v_uid and contact_user_id = p_contact_user_id/i);
+    expect(helper).toMatch(/You can only add expenses with accepted contacts/i);
+    expect(helper).toMatch(/owner_id = p_actor and contact_user_id = p_contact_user_id/i);
+    // The public RPC supplies the signed-in user as the actor, never a parameter.
+    expect(wrapper).toMatch(/raise exception 'Not authenticated'/i);
+    expect(wrapper).toMatch(/_insert_contact_expense\(\s*v_uid,/i);
+  });
+
+  it("revokes client execute on every private (underscore) function", () => {
+    const functions = readSchema("04_functions.sql");
+    const names = [
+      ...functions.matchAll(/create or replace function public\.(_\w+)\(/gi),
+    ].map((match) => match[1]);
+
+    expect(names.length).toBeGreaterThan(0);
+    for (const name of names) {
+      expect(functions).toMatch(
+        new RegExp(
+          `revoke execute on function public\\.${name}\\([^;]*from public, anon, authenticated;`,
+          "i"
+        )
+      );
+    }
   });
 
   it("restricts contact_requests reads to the two participants", () => {
