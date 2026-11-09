@@ -109,9 +109,9 @@ export default async function recurringSchedules({ db, asUser, signUp, rejects, 
   const rate = rateCols.find((c) => c.column_name === "last_exchange_rate");
   check(
     rateCols.length === 1 && rate && rate.data_type === "numeric" &&
-      rate.numeric_precision === 18 && rate.numeric_scale === 8 &&
+      rate.numeric_precision === 24 && rate.numeric_scale === 12 &&
       rate.is_nullable === "NO" && rate.column_default === null,
-    "recurring_schedules has last_exchange_rate numeric(18,8) not null with no default, and no exchange_rate"
+    "recurring_schedules has last_exchange_rate numeric(24,12) not null with no default, and no exchange_rate"
   );
   check(
     await violates(
@@ -120,6 +120,46 @@ export default async function recurringSchedules({ db, asUser, signUp, rejects, 
     ),
     "a zero last_exchange_rate is rejected"
   );
+  const { rows: tinyRate } = await db.query(
+    `insert into public.recurring_schedules (kind, group_id, created_by, paid_by, description, amount,
+       last_exchange_rate, splits, start_date, tz, frequency)
+     values ('group', $1, $2, $2, 'Rate', 1, '0.000714285714', '[]', '2026-11-01', 'UTC', 'daily')
+     returning last_exchange_rate::text as rate`,
+    [groupId, dan]
+  );
+  check(
+    tinyRate[0].rate === "0.000714285714",
+    "last_exchange_rate keeps 1/1400 unrounded (0.000714285714 round-trips)"
+  );
+
+  check(
+    await violates(
+      insertSchedule({ kind: "group", group_id: groupId, splits: JSON.stringify({ not: "an array" }) }),
+      "recurring_schedules_splits_array_check"
+    ),
+    "splits that is not a JSON array is rejected"
+  );
+
+  // created_by is audit only: the creator leaving must not delete a series the
+  // payer is still in.
+  const hal = await signUp("rs-hal@example.com", "Hal");
+  const handedOver = (
+    await insertSchedule({ kind: "group", group_id: groupId, created_by: hal, paid_by: dan })
+  ).rows[0].id;
+  await db.query(`delete from public.profiles where id = $1`, [hal]);
+  const { rows: orphaned } = await db.query(
+    `select created_by, paid_by from public.recurring_schedules where id = $1`,
+    [handedOver]
+  );
+  check(
+    orphaned.length === 1 && orphaned[0].created_by === null && orphaned[0].paid_by === dan,
+    "deleting the creator's profile keeps the schedule and nulls created_by"
+  );
+  const { rows: creatorCol } = await db.query(`
+    select is_nullable from information_schema.columns
+    where table_schema = 'public' and table_name = 'recurring_schedules' and column_name = 'created_by'
+  `);
+  check(creatorCol[0]?.is_nullable === "YES", "recurring_schedules.created_by is nullable");
 
   // Visibility.
   const visible = (uid) =>
@@ -250,6 +290,7 @@ export default async function recurringSchedules({ db, asUser, signUp, rejects, 
   const tables = [
     {
       table: "expenses",
+      occurrenceCheck: "expenses_schedule_occurrence_check",
       schedule: gSched,
       makeSchedule: () => groupSchedule(),
       insert: (scheduleId, occurrence) =>
@@ -261,6 +302,7 @@ export default async function recurringSchedules({ db, asUser, signUp, rejects, 
     },
     {
       table: "contact_expenses",
+      occurrenceCheck: "contact_expenses_schedule_occurrence_check",
       schedule: cSched,
       makeSchedule: () => contactSchedule(),
       insert: (scheduleId, occurrence) =>
@@ -271,7 +313,7 @@ export default async function recurringSchedules({ db, asUser, signUp, rejects, 
         ),
     },
   ];
-  for (const { table, schedule, makeSchedule, insert } of tables) {
+  for (const { table, occurrenceCheck, schedule, makeSchedule, insert } of tables) {
     // Postgres treats nulls as distinct either way, so only the definition
     // shows the index is partial (the engine's ON CONFLICT names that predicate).
     const { rows: unique } = await db.query(
@@ -308,6 +350,13 @@ export default async function recurringSchedules({ db, asUser, signUp, rejects, 
     check(
       !(await rejects(insert(schedule, "2026-12-01"))),
       `${table}: the same schedule on another date is allowed`
+    );
+    // Nulls are distinct in a unique index, so without this check a null
+    // occurrence_date would let one schedule create the same occurrence twice.
+    check(
+      (await violates(insert(schedule, null), occurrenceCheck)) &&
+        (await violates(insert(schedule, null), occurrenceCheck)),
+      `${table}: a schedule_id with a null occurrence_date is rejected (${occurrenceCheck}), twice over`
     );
     check(
       !(await rejects(

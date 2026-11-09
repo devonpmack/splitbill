@@ -32,7 +32,8 @@ create table public.contact_expenses (
   schedule_id uuid references public.recurring_schedules (id) on delete set null,
   occurrence_date date,
   -- A member edited this occurrence; schedule edits and stops leave it alone.
-  hand_edited boolean not null default false
+  hand_edited boolean not null default false,
+  constraint contact_expenses_schedule_occurrence_check check (schedule_id is null or occurrence_date is not null)
 );
 
 create table public.contact_expense_splits (

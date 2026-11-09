@@ -2,6 +2,7 @@
 -- create-expense RPCs take. Occurrences become ordinary expenses linked back by
 -- (schedule_id, occurrence_date); the unique index makes creating one twice a
 -- no-op. Clients read schedules under RLS and write only through RPCs.
+-- created_by is audit only (set null when the creator leaves, the series stays).
 
 create table public.recurring_schedules (
   id uuid primary key default gen_random_uuid(),
@@ -9,13 +10,13 @@ create table public.recurring_schedules (
   group_id uuid references public.groups (id) on delete cascade,
   user_lo uuid references public.profiles (id) on delete cascade,
   user_hi uuid references public.profiles (id) on delete cascade,
-  created_by uuid not null references public.profiles (id) on delete cascade,
+  created_by uuid references public.profiles (id) on delete set null,
   paid_by uuid not null references public.profiles (id) on delete cascade,
   description text not null,
   category text,
   amount numeric(12, 2) not null check (amount > 0),
   currency text not null default 'USD',
-  last_exchange_rate numeric(18, 8) not null check (last_exchange_rate > 0),
+  last_exchange_rate numeric(24, 12) not null check (last_exchange_rate > 0),
   split_type public.split_type not null default 'equal',
   splits jsonb not null,
   start_date date not null,
@@ -30,6 +31,7 @@ create table public.recurring_schedules (
   last_error text,
   failed_runs int not null default 0,
   check (user_lo < user_hi),
+  constraint recurring_schedules_splits_array_check check (jsonb_typeof(splits) = 'array'),
   constraint recurring_schedules_scope_check check (
     (kind = 'group' and group_id is not null and user_lo is null and user_hi is null)
     or (kind = 'contact' and group_id is null and user_lo is not null and user_hi is not null)
@@ -44,12 +46,16 @@ create index idx_recurring_schedules_active on public.recurring_schedules (start
 alter table public.expenses
   add column schedule_id uuid references public.recurring_schedules (id) on delete set null,
   add column occurrence_date date,
-  add column hand_edited boolean not null default false;
+  add column hand_edited boolean not null default false,
+  add constraint expenses_schedule_occurrence_check
+    check (schedule_id is null or occurrence_date is not null);
 
 alter table public.contact_expenses
   add column schedule_id uuid references public.recurring_schedules (id) on delete set null,
   add column occurrence_date date,
-  add column hand_edited boolean not null default false;
+  add column hand_edited boolean not null default false,
+  add constraint contact_expenses_schedule_occurrence_check
+    check (schedule_id is null or occurrence_date is not null);
 
 create unique index idx_expenses_schedule_occurrence on public.expenses (schedule_id, occurrence_date)
   where schedule_id is not null;
