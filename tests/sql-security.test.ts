@@ -434,6 +434,10 @@ describe("SQL security guards", () => {
     expect(policies).toMatch(
       /create policy "Participants can view contact recurring schedules"[\s\S]*?on public\.recurring_schedules for select[\s\S]*?using \(auth\.uid\(\) = user_lo or auth\.uid\(\) = user_hi\)/i
     );
+    const scheduleCommands = [
+      ...policies.matchAll(/on public\.recurring_schedules for (\w+)/gi),
+    ].map((m) => m[1].toLowerCase());
+    expect(scheduleCommands).toEqual(["select", "select"]);
 
     // Schedules are written only by the RPCs and the engine, so the table has
     // RLS on, a SELECT-only client grant and the remainder revoked.
