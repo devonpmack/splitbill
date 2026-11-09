@@ -2032,7 +2032,8 @@ create or replace function public.create_payment(
   p_paid_to uuid,
   p_amount numeric,
   p_note text default null,
-  p_currency text default null
+  p_currency text default null,
+  p_date timestamptz default null
 )
 returns public.payments
 language plpgsql
@@ -2080,10 +2081,11 @@ begin
   v_amount := round(p_amount, 2);
 
   insert into public.payments (
-    group_id, paid_by, paid_to, amount, note, currency, exchange_rate, base_amount
+    group_id, paid_by, paid_to, amount, note, currency, exchange_rate, base_amount, date
   )
   values (
-    p_group_id, p_paid_by, p_paid_to, v_amount, p_note, v_currency, 1, v_amount
+    p_group_id, p_paid_by, p_paid_to, v_amount, p_note, v_currency, 1, v_amount,
+    coalesce(p_date, now())
   )
   returning * into v_payment;
 
@@ -2100,7 +2102,8 @@ create or replace function public.update_payment(
   p_paid_by uuid,
   p_paid_to uuid,
   p_amount numeric,
-  p_note text default null
+  p_note text default null,
+  p_date timestamptz default null
 )
 returns public.payments
 language plpgsql
@@ -2153,7 +2156,8 @@ begin
     paid_to = p_paid_to,
     amount = v_amount,
     note = p_note,
-    base_amount = round(v_amount * v_existing.exchange_rate, 2)
+    base_amount = round(v_amount * v_existing.exchange_rate, 2),
+    date = coalesce(p_date, date)
   where id = p_payment_id
   returning * into v_payment;
 
@@ -2230,7 +2234,8 @@ create or replace function public.create_contact_payment(
   p_paid_to uuid,
   p_amount numeric,
   p_note text default null,
-  p_currency text default null
+  p_currency text default null,
+  p_date timestamptz default null
 )
 returns public.contact_payments
 language plpgsql
@@ -2292,11 +2297,11 @@ begin
 
   insert into public.contact_payments (
     paid_by, paid_to, user_lo, user_hi, amount, note,
-    currency, exchange_rate, base_amount
+    currency, exchange_rate, base_amount, date
   )
   values (
     p_paid_by, p_paid_to, v_lo, v_hi, v_amount, p_note,
-    v_currency, 1, v_amount
+    v_currency, 1, v_amount, coalesce(p_date, now())
   )
   returning * into v_payment;
 
@@ -2305,13 +2310,14 @@ end;
 $$;
 
 -- Edits a one-on-one settle-up payment. The participant pair is immutable; only
--- direction, amount and note change, and only a participant may edit.
+-- direction, amount, note and date change, and only a participant may edit.
 create or replace function public.update_contact_payment(
   p_payment_id uuid,
   p_paid_by uuid,
   p_paid_to uuid,
   p_amount numeric,
-  p_note text default null
+  p_note text default null,
+  p_date timestamptz default null
 )
 returns public.contact_payments
 language plpgsql
@@ -2360,7 +2366,8 @@ begin
     paid_to = p_paid_to,
     amount = v_amount,
     note = p_note,
-    base_amount = round(v_amount * v_existing.exchange_rate, 2)
+    base_amount = round(v_amount * v_existing.exchange_rate, 2),
+    date = coalesce(p_date, date)
   where id = p_payment_id
   returning * into v_payment;
 
