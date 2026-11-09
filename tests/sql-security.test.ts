@@ -424,6 +424,30 @@ describe("SQL security guards", () => {
     }
   });
 
+  it("lets only group members and the contact pair read recurring schedules", () => {
+    const policies = readSchema("05_policies.sql");
+    const core = readSchema("02_tables_core.sql");
+
+    expect(policies).toMatch(
+      /create policy "Members can view group recurring schedules"[\s\S]*?on public\.recurring_schedules for select[\s\S]*?using \(public\.is_group_member\(group_id, auth\.uid\(\)\)\)/i
+    );
+    expect(policies).toMatch(
+      /create policy "Participants can view contact recurring schedules"[\s\S]*?on public\.recurring_schedules for select[\s\S]*?using \(auth\.uid\(\) = user_lo or auth\.uid\(\) = user_hi\)/i
+    );
+
+    // Schedules are written only by the RPCs and the engine, so the table has
+    // RLS on, a SELECT-only client grant and the remainder revoked.
+    expect(core).toMatch(
+      /alter table public\.recurring_schedules enable row level security;/i
+    );
+    expect(core).toMatch(
+      /grant select on table[^;]*public\.recurring_schedules[^;]*to anon, authenticated;/i
+    );
+    expect(core).toMatch(
+      /revoke insert, update, delete, truncate, references, trigger on table[^;]*public\.recurring_schedules[^;]*from anon, authenticated;/i
+    );
+  });
+
   it("scopes profile visibility to shared context", () => {
     const policies = readSchema("05_policies.sql");
     const functions = readSchema("04_functions.sql");

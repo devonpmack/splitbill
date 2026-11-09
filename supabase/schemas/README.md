@@ -53,7 +53,8 @@ must be maintained there by hand:
   The function itself lives in `04_functions.sql`; only the trigger is manual.
 - **The `supabase_realtime` publication** membership
   (`alter publication supabase_realtime add table ...` for expenses,
-  expense_splits, payments, group_members). Publications are not tracked.
+  expense_splits, payments, group_members, contact_requests,
+  recurring_schedules). Publications are not tracked.
 - **Seed / backfill data** (`insert`/`update`/`delete`). DML is never captured
   by the diff tool; see `supabase/seed.sql`.
 

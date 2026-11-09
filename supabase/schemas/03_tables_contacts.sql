@@ -27,7 +27,10 @@ create table public.contact_expenses (
   -- the contact pair's base currency at exchange_rate (captured at entry).
   currency text not null default 'USD',
   exchange_rate numeric(18, 8) not null default 1 check (exchange_rate > 0),
-  base_amount numeric(12, 2) not null default 0 check (base_amount >= 0)
+  base_amount numeric(12, 2) not null default 0 check (base_amount >= 0),
+  -- Set when the row is an occurrence of a recurring schedule.
+  schedule_id uuid references public.recurring_schedules (id) on delete set null,
+  occurrence_date date
 );
 
 create table public.contact_expense_splits (
@@ -93,6 +96,9 @@ create index idx_contacts_contact_user on public.contacts (contact_user_id);
 create index idx_contact_expenses_paid_by on public.contact_expenses (paid_by);
 create index idx_contact_expenses_user_lo on public.contact_expenses (user_lo);
 create index idx_contact_expenses_user_hi on public.contact_expenses (user_hi);
+-- One expense per schedule per occurrence date, whoever creates it.
+create unique index idx_contact_expenses_schedule_occurrence on public.contact_expenses (schedule_id, occurrence_date)
+  where schedule_id is not null;
 create index idx_contact_expense_splits_expense on public.contact_expense_splits (expense_id);
 create index idx_contact_expense_splits_user on public.contact_expense_splits (user_id);
 create index idx_contact_payments_paid_by on public.contact_payments (paid_by);

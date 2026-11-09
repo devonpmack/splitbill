@@ -69,3 +69,11 @@ create policy "Participants can view contact requests"
 create policy "Participants can view contact pair settings"
   on public.contact_pair_settings for select
   using (auth.uid() = user_lo or auth.uid() = user_hi);
+
+create policy "Members can view group recurring schedules"
+  on public.recurring_schedules for select
+  using (public.is_group_member(group_id, auth.uid()));
+
+create policy "Participants can view contact recurring schedules"
+  on public.recurring_schedules for select
+  using (auth.uid() = user_lo or auth.uid() = user_hi);
