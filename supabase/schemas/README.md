@@ -79,6 +79,10 @@ The migration history has been baselined for the declarative workflow:
 
 ### Remaining one-time step (linking the remote)
 
+> Only for the original project, which was provisioned by hand. **On a new,
+> empty project do not run `migration repair`**: it skips the baseline and the
+> next `supabase db push` fails partway. See [`SETUP.md`](../../SETUP.md).
+
 The remote project was provisioned by running `000_full_setup.sql` in the SQL
 editor, not through CLI migration tracking. So the first time you link the CLI,
 mark the baseline as already applied to avoid re-running it:

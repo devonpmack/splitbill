@@ -5,10 +5,12 @@
 //
 // It needs no Docker, no Supabase CLI and no Supabase project. PGlite is real
 // Postgres, so the plpgsql, RLS policies, grants and publications are the
-// ones a fresh project would build. What it stands in for is the part Supabase
-// supplies before the first migration: the auth schema (auth.users, auth.uid())
-// and the anon / authenticated roles. It does not run GoTrue, PostgREST or
-// Realtime, so it proves the database, not the HTTP and websocket layers.
+// ones a fresh project would build (PGlite's Postgres version is newer than a
+// project's, which is 15 to 17). What it stands in for is the part Supabase
+// supplies before the first migration: the auth schema (auth.users, auth.uid()),
+// the anon / authenticated roles and their default privileges. It does not run
+// GoTrue, PostgREST or Realtime, so it proves the database, not the HTTP and
+// websocket layers.
 import { PGlite } from "@electric-sql/pglite";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -45,6 +47,12 @@ const SUPABASE_STUBS = `
     $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
   create schema extensions;
   create publication supabase_realtime;
+  -- Supabase gives its API roles everything on whatever a migration creates in
+  -- public; the hardening migration then has to take the write grants away.
+  grant usage on schema public to anon, authenticated, service_role;
+  alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+  alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
+  alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
 `;
 
 const db = new PGlite();
@@ -97,12 +105,13 @@ async function signUp(email, fullName) {
   return rows[0].id;
 }
 
-const rejects = async (promise) => {
+// Whether the promise fails, and with which SQLSTATE when one is asked for.
+const rejects = async (promise, code) => {
   try {
     await promise;
     return false;
-  } catch {
-    return true;
+  } catch (error) {
+    return code ? error.code === code : true;
   }
 };
 
@@ -183,10 +192,30 @@ try {
         db.query(
           `insert into public.expenses (group_id, paid_by, amount, description) values ($1, $2, 1, 'x')`,
           [groupId, bob]
-        )
+        ),
+        "42501" // insufficient_privilege: the grant is gone, not just blocked by RLS
       )
     ),
     "clients cannot write a table directly (writes go through the RPCs)"
+  );
+
+  // RLS alone would also turn a direct write away (with the same SQLSTATE), so
+  // look at the grants themselves: the API roles hold SELECT and nothing else.
+  const writable = await db.query(`
+    select r.rolname || ' ' || p.priv || ' on ' || c.relname as grant_held
+    from pg_class c
+    cross join (values ('anon'), ('authenticated')) r(rolname)
+    cross join (values ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE')) p(priv)
+    where c.relnamespace = 'public'::regnamespace and c.relkind = 'r'
+      and has_table_privilege(r.rolname, c.oid, p.priv)
+  `);
+  check(
+    writable.rows.length === 0,
+    `anon and authenticated hold no write grant on any public table${
+      writable.rows.length
+        ? `: ${writable.rows.slice(0, 3).map((r) => r.grant_held).join("; ")}`
+        : ""
+    }`
   );
 
   const published = await db.query(

@@ -9,16 +9,17 @@ slightly differently, the setting is the same one.
 
 ## Plan
 
-This guide uses the **Free** plan ($0). One thing to know: a Free project that
-sees no activity for 7 days is **paused**, and the app cannot reach it until you
-restore it (below). Check [supabase.com/pricing](https://supabase.com/pricing)
+This guide uses the **Free** plan ($0). Two things to know: a Free
+project that sees no activity for 7 days is **paused**, and the app cannot reach
+it until you restore it (below), and a Free organization is limited to 2 active
+projects, so if you already have two, pause or delete one first. Check [supabase.com/pricing](https://supabase.com/pricing)
 for the current limits.
 
 ## 1. Create the organization and project
 
 1. Sign in at [supabase.com/dashboard](https://supabase.com/dashboard).
-2. **New organization**: name it `Overture`, type of organization as you see
-   fit, plan **Free**.
+2. **New organization**: name it as you like (for example `Overture`), type of
+   organization as you see fit, plan **Free**.
 3. **New project** in that organization:
    - Name: `splitbill`
    - Database password: generate one and keep it in your password manager. You
@@ -51,9 +52,11 @@ migrations in `supabase/migrations/` and asks you to confirm; answer yes.
 
 > **Do not run `supabase migration repair --status applied 000`.** That line in
 > `supabase/schemas/README.md` was written for the original project, where
-> `000_full_setup.sql` had already been run by hand. On your new empty project
-> it would mark the whole baseline as done without running it, and you would
-> get a database with no tables.
+> `000_full_setup.sql` had already been run by hand. On your new empty project it
+> marks the baseline as already applied without running it, so `db push` then
+> fails partway (at the second migration, with `type public.split_type does not
+> exist`) and leaves you with a half-built database. If you did run it, undo it
+> with `supabase migration repair --status reverted 000` and push again.
 
 To check it worked, open *Table Editor*: you should see 13 tables in the
 `public` schema: `profiles`, `groups`, `group_members`, `expenses`,
@@ -72,9 +75,10 @@ Under *Authentication*:
 - **Providers → Email**: enabled (it is by default). The app signs up and signs
   in with email and password only. The app itself asks for at least 6
   characters.
-- **Confirm email**: turn it **off** for your first run. The app has no code to
-  catch a confirmation link (it never sets `emailRedirectTo` and has no deep-link
-  handler), and the built-in email sender is heavily rate-limited. With it off,
+- **Confirm email**: turn it **off** for your first run. On a phone nothing in
+  the app reads the sign-in token from a confirmation link (it never sets
+  `emailRedirectTo`, and there is no `setSession` or `exchangeCodeForSession`
+  call), and the built-in email sender is heavily rate-limited. With it off,
   sign-up works immediately and the sign-up screen's "sign in now" is true.
   If you leave it on, a new user must click the emailed link before they can sign
   in; the link confirms the address and then lands on the Site URL below, and
@@ -152,5 +156,7 @@ RPCs as separate users, checks that row-level security hides a group from a
 non-member and that clients cannot write tables directly, checks that the five
 realtime tables are published, and checks that `supabase/schemas/` and
 `supabase/migrations/` describe the same database. It needs no Docker and no
-Supabase account, and it runs in CI. It does not run Supabase's auth, REST or
+Supabase account, and it runs in CI. It runs on a newer Postgres than a Supabase
+project does (15 to 17), so a failure there is real but a pass is not a promise
+about every version. It does not run Supabase's auth, REST or
 realtime servers, so it proves the database, not those layers.
