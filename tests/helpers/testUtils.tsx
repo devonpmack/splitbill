@@ -26,6 +26,33 @@ export async function actAsync<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
+ * Pins `new Date()` / `Date.now()` to `now` while leaving every timer real, so
+ * promises, waitFor and React Query behave as usual. Pair with
+ * `jest.useRealTimers()` in afterEach.
+ */
+export function freezeNow(now: Date) {
+  jest.useFakeTimers({
+    now,
+    doNotFake: [
+      "nextTick",
+      "setImmediate",
+      "clearImmediate",
+      "setInterval",
+      "clearInterval",
+      "setTimeout",
+      "clearTimeout",
+      "queueMicrotask",
+      "requestAnimationFrame",
+      "cancelAnimationFrame",
+      "requestIdleCallback",
+      "cancelIdleCallback",
+      "hrtime",
+      "performance",
+    ],
+  });
+}
+
+/**
  * Wraps a tree in the app's cross-cutting providers. Tests use the real
  * providers rather than mocks so provider-ordering mistakes surface here (see
  * testing.md Rule 6).
