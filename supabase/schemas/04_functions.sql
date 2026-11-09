@@ -421,8 +421,10 @@ begin
   end if;
 
   -- Future-dated rows are not in the balance above yet but will be on their
-  -- date, so the caller cannot leave while one involves them. The recurring
-  -- piece adds "or an active schedule involves them" to this same condition.
+  -- date, so the caller cannot leave while one involves them. "Involves" is
+  -- get_upcoming_expenses' rule, so whatever blocks is listed there to cancel.
+  -- The recurring piece adds "or an active schedule involves them" to this
+  -- same condition.
   if exists (
     select 1 from public.expenses e
     where e.group_id = p_group_id
@@ -431,7 +433,9 @@ begin
         e.paid_by = v_uid
         or exists (
           select 1 from public.expense_splits es
-          where es.expense_id = e.id and es.user_id = v_uid
+          where es.expense_id = e.id
+            and es.user_id = v_uid
+            and es.amount > 0
         )
       )
   ) or exists (

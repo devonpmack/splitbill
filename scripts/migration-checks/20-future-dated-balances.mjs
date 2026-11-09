@@ -452,6 +452,37 @@ export default async ({ db, asUser, signUp, check }) => {
     "the last member can still leave (deleting the group) with a future row"
   );
 
+  // The guard and get_upcoming_expenses agree on who a future expense involves:
+  // the payer (even with no split row) and anyone with a non-zero split. A
+  // member it blocks can find the row to cancel; one it lists nothing for can go.
+  const quinn = await signUp("quinn.future@example.com", "Quinn");
+  const wes = await signUp("wes.future@example.com", "Wes");
+  const xan = await signUp("xan.future@example.com", "Xan");
+  const groupP = await createGroup(quinn, "Leave Parity", [
+    "wes.future@example.com",
+    "xan.future@example.com",
+  ]);
+  const pe = await addExpense(quinn, groupP, quinn, 10, [[wes, 10], [xan, 0]], IN_2D);
+  const listsPe = async (uid) => (await upcoming(uid, 50)).some((r) => r.id === pe);
+  check(
+    (await db.query(`select 1 from public.expense_splits where expense_id = $1 and user_id = $2`, [pe, quinn]))
+      .rows.length === 0,
+    "the parity expense's payer has no split row"
+  );
+  check(
+    (await leave(quinn, groupP)) === LEAVE_MSG && (await listsPe(quinn)),
+    "the payer of a future expense with no split of their own is refused, and it is in their upcoming list"
+  );
+  check(
+    (await leave(wes, groupP)) === LEAVE_MSG && (await listsPe(wes)),
+    "a member with a non-zero future split is refused, and it is in their upcoming list"
+  );
+  check(!(await listsPe(xan)), "a 0.00 future split is not in that member's upcoming list");
+  check(
+    (await leave(xan, groupP)) === null && !(await isMember(xan, groupP)),
+    "a member whose only future split is 0.00 can leave"
+  );
+
   // ---- Currency guards count future rows ---------------------------------
   const sam = await signUp("sam.future@example.com", "Sam");
   const tia = await signUp("tia.future@example.com", "Tia");

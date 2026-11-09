@@ -120,6 +120,29 @@ describe("SQL security guards", () => {
     );
   });
 
+  it("splits the activity feed from upcoming expenses under the same guards", () => {
+    const functions = readSchema("04_functions.sql");
+    const recent = functionBody(functions, "get_recent_activity");
+    const upcoming = functionBody(functions, "get_upcoming_expenses");
+
+    expect(recent).toMatch(/and e\.date <= now\(\)/i);
+    expect(upcoming).toMatch(/raise exception 'Not authenticated'/i);
+    expect(upcoming).toMatch(/public\.is_group_member\(e\.group_id, v_uid\)/i);
+    expect(upcoming).toMatch(/and e\.date > now\(\)/i);
+    expect(upcoming).toMatch(/e\.paid_by = v_uid/i);
+    expect(upcoming).toMatch(/es\.user_id = v_uid\s+and es\.amount > 0/i);
+    expect(upcoming).toMatch(/order by e\.date asc/i);
+    expect(upcoming.indexOf("limit greatest")).toBeGreaterThan(
+      upcoming.indexOf("es.user_id = v_uid")
+    );
+    expect(functions).toMatch(
+      /function public\.get_upcoming_expenses\([^)]*\)[\s\S]*?security definer\s+set search_path = public, pg_temp/i
+    );
+    // Same execute grants as get_recent_activity: neither is revoked or
+    // granted explicitly, both keep the defaults.
+    expect(functions).not.toMatch(/(grant|revoke)[^;]*get_(upcoming_expenses|recent_activity)/i);
+  });
+
   it("pins search_path on every SECURITY DEFINER function", () => {
     const functions = readSchema("04_functions.sql");
     const lines = functions.split("\n");
