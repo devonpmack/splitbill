@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="500" viewBox="0 0 1024 500">
+  <rect width="1024" height="500" fill="#1B998B"/>
+  <defs>
+    <clipPath id="fl"><rect x="95" y="95" width="146.0" height="310"/></clipPath>
+    <clipPath id="fr"><rect x="259.0" y="95" width="146.0" height="310"/></clipPath>
+  </defs>
+  <g clip-path="url(#fl)"><circle cx="250" cy="250" r="150" fill="#FFFFFF"/><circle cx="250" cy="250" r="114.0" fill="none" stroke="#1B998B" stroke-opacity="0.35" stroke-width="7.5"/></g>
+  <g clip-path="url(#fr)"><circle cx="250" cy="250" r="150" fill="#CFF3EE"/><circle cx="250" cy="250" r="114.0" fill="none" stroke="#1B998B" stroke-opacity="0.35" stroke-width="7.5"/></g>
+  <text x="450" y="268" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="116" font-weight="700" fill="#FFFFFF">Evenpot</text>
+  <text x="454" y="330" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="32" fill="#CFF3EE">Split bills with friends and groups</text>
+</svg>
