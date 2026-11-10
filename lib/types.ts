@@ -30,6 +30,9 @@ export interface Database {
           full_name: string;
           avatar_url: string | null;
           created_at: string;
+          // Set when the person deleted their account (the profile row stays so
+          // shared expenses still add up).
+          deleted_at: string | null;
         };
         Insert: {
           id: string;
@@ -859,7 +862,7 @@ export interface BalanceBreakdown {
 // name the joined profile carries.
 export interface MemberWithProfile {
   user_id: string;
-  profiles?: { full_name?: string | null } | null;
+  profiles?: { full_name?: string | null; deleted_at?: string | null } | null;
 }
 
 // Flattened read shapes for the global Activity feed. Each mirrors the columns

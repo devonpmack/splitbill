@@ -8,6 +8,7 @@ import {
 import { useCreateRecurringSchedule } from "@/lib/queries/useRecurringSchedules";
 import { useAuth } from "@/lib/auth";
 import { ExpenseFormScreen } from "@/components/ExpenseFormScreen";
+import { payerMembers, splitMembers } from "@/lib/ghost-members";
 import type { MemberWithProfile } from "@/lib/types";
 
 export default function AddExpense() {
@@ -33,7 +34,8 @@ export default function AddExpense() {
 
   return (
     <ExpenseFormScreen
-      members={group?.group_members ?? []}
+      members={splitMembers(group?.group_members ?? [], existingExpense)}
+      payerMembers={payerMembers(group?.group_members ?? [], existingExpense)}
       memberName={memberName}
       baseCurrency={group?.currency ?? "USD"}
       baseCurrencyLabel="group currency"

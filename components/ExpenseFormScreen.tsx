@@ -93,6 +93,8 @@ function storedDate(
 
 type ExpenseFormScreenProps = {
   members: MemberWithProfile[];
+  // Who can be picked as payer, when that differs from who can be in the split.
+  payerMembers?: MemberWithProfile[];
   memberName: (member: MemberWithProfile) => string;
   // The currency balances are kept in (a group's currency, or a pair's).
   baseCurrency: string;
@@ -107,6 +109,7 @@ type ExpenseFormScreenProps = {
 
 export function ExpenseFormScreen({
   members,
+  payerMembers,
   memberName,
   baseCurrency,
   baseCurrencyLabel,
@@ -349,7 +352,7 @@ export function ExpenseFormScreen({
       )}
 
       <PaidByPicker
-        members={members}
+        members={payerMembers ?? members}
         paidBy={effectivePaidBy}
         onSelect={setPaidBy}
         getMemberName={memberName}
