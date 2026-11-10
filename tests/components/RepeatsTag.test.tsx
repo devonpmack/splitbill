@@ -2,6 +2,7 @@ import { screen } from "@testing-library/react-native";
 import { renderWithPaper } from "../helpers/testUtils";
 import { ExpenseCard } from "@/components/groups/ExpenseCard";
 import { ActivityFeedItemCard } from "@/components/activity/ActivityFeedItem";
+import { formatDay } from "@/lib/dates";
 import type {
   ActivityContactExpense,
   ActivityExpense,
@@ -190,7 +191,7 @@ describe("activity feed rows", () => {
     );
 
     expect(screen.getByText("Repeats monthly")).toBeTruthy();
-    expect(screen.getByText(new Date(2026, 11, 1).toLocaleDateString())).toBeTruthy();
+    expect(screen.getByText(formatDay(new Date(2026, 11, 1)))).toBeTruthy();
   });
 
   it("tags a contact occurrence and counts an upcoming one from its occurrence date", async () => {
@@ -225,7 +226,7 @@ describe("activity feed rows", () => {
 
     expect(screen.queryByText(/^Repeats/)).toBeNull();
     expect(
-      screen.getByText(new Date("2026-11-27T12:00:00Z").toLocaleDateString())
+      screen.getByText(formatDay(new Date("2026-11-27T12:00:00Z")))
     ).toBeTruthy();
   });
 });

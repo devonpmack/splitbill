@@ -12,7 +12,6 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 
 import {
-  useRecentContactActivity,
   useContactExpenses,
   useRecentContactActivity,
   useUpcomingContactActivity,
