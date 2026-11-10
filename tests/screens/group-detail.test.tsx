@@ -235,12 +235,12 @@ describe("GroupDetail screen", () => {
 
   it("places and dates a payment by its date, not when it was recorded", async () => {
     setup({
-      expenses: [{ ...expensesFixture[0], date: "2024-01-15T12:00:00Z" }],
+      expenses: [{ ...expensesFixture[0], date: new Date(2024, 0, 15, 12).toISOString() }],
       payments: [
         {
           ...paymentsFixture[0],
-          created_at: "2023-12-01T12:00:00Z",
-          date: "2024-02-01T12:00:00Z",
+          created_at: new Date(2023, 11, 1, 12).toISOString(),
+          date: new Date(2024, 1, 1, 12).toISOString(),
         },
       ],
     });

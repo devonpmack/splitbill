@@ -338,7 +338,7 @@ describe("AddExpense screen", () => {
               amount: 30,
               paid_by: "u1",
               split_type: "equal",
-              date: "2026-11-05T15:00:00Z",
+              date: new Date(2026, 10, 5, 15).toISOString(),
               expense_splits: [
                 { user_id: "u1", amount: 15 },
                 { user_id: "u2", amount: 15 },

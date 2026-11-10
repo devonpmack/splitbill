@@ -185,7 +185,7 @@ describe("ContactSettleUp screen (edit)", () => {
           paid_to: "user-2",
           amount: 8,
           note: "cash",
-          date: "2026-11-05T15:00:00Z",
+          date: new Date(2026, 10, 5, 15).toISOString(),
         },
       ],
     });

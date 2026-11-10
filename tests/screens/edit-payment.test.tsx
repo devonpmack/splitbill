@@ -41,7 +41,7 @@ const payment = {
   amount: 20,
   note: "Venmo",
   created_at: "2024-01-02",
-  date: "2026-11-05T15:00:00Z",
+  date: new Date(2026, 10, 5, 15).toISOString(),
 };
 
 beforeEach(() => {
