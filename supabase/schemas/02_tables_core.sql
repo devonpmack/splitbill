@@ -208,3 +208,34 @@ revoke insert, update, delete, truncate, references, trigger on table
   public.group_simplify_debts_events,
   public.recurring_schedules
   from anon, authenticated;
+
+-- A server-side exchange-rate source for foreign-currency recurring schedules.
+-- exchange_rates holds one row per UTC day, USD-keyed, in the shape the app's
+-- lib/exchange-rates.ts already consumes (open.er-api.com/v6/latest/USD: units of
+-- each currency per 1 USD). Nothing reads or writes it from a client: only the
+-- SECURITY DEFINER engine and the refresh functions below (and the service role)
+-- touch it, so RLS is on with no policy and the client grants are revoked.
+
+create table public.exchange_rates (
+  day date primary key,
+  rates jsonb not null,
+  fetched_at timestamptz not null default now()
+);
+
+alter table public.exchange_rates enable row level security;
+
+revoke all on table public.exchange_rates from anon, authenticated;
+grant all on table public.exchange_rates to service_role;
+
+-- The pg_net request ids _refresh_exchange_rates_fire has issued, so the store
+-- step reads only responses to its own requests (net._http_response is shared
+-- with every other pg_net user). Same access rule as exchange_rates.
+create table public.exchange_rate_requests (
+  id bigint primary key,
+  requested_at timestamptz not null default now()
+);
+
+alter table public.exchange_rate_requests enable row level security;
+
+revoke all on table public.exchange_rate_requests from anon, authenticated;
+grant all on table public.exchange_rate_requests to service_role;
