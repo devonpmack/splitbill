@@ -226,3 +226,16 @@ alter table public.exchange_rates enable row level security;
 
 revoke all on table public.exchange_rates from anon, authenticated;
 grant all on table public.exchange_rates to service_role;
+
+-- The pg_net request ids _refresh_exchange_rates_fire has issued, so the store
+-- step reads only responses to its own requests (net._http_response is shared
+-- with every other pg_net user). Same access rule as exchange_rates.
+create table public.exchange_rate_requests (
+  id bigint primary key,
+  requested_at timestamptz not null default now()
+);
+
+alter table public.exchange_rate_requests enable row level security;
+
+revoke all on table public.exchange_rate_requests from anon, authenticated;
+grant all on table public.exchange_rate_requests to service_role;

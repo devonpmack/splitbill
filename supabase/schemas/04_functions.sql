@@ -2841,8 +2841,8 @@ revoke execute on function public._occurrence_date(date, text, int)
 -- rate is not rounded. Anything unusable (no recent row, a currency or the base
 -- missing, a non-positive or non-numeric rate, a pair rate the numeric(18,8)
 -- exchange_rate column cannot hold) falls back to last_exchange_rate. It never
--- raises: every value is type-checked before it is cast, and the divisor is
--- positive.
+-- raises: any error (such as a numeric overflow from a row written outside the
+-- store function) is caught and the fallback returned.
 create or replace function public._schedule_rate(p_schedule public.recurring_schedules)
 returns numeric
 language plpgsql
@@ -2857,39 +2857,43 @@ declare
   v_to numeric;
   v_rate numeric;
 begin
-  if p_schedule.kind = 'group' then
-    select g.currency into v_base from public.groups g where g.id = p_schedule.group_id;
-  elsif p_schedule.kind = 'contact' then
-    select s.currency into v_base from public.contact_pair_settings s
-    where s.user_lo = p_schedule.user_lo and s.user_hi = p_schedule.user_hi;
-    v_base := coalesce(v_base, 'USD');
-  end if;
+  begin
+    if p_schedule.kind = 'group' then
+      select g.currency into v_base from public.groups g where g.id = p_schedule.group_id;
+    elsif p_schedule.kind = 'contact' then
+      select s.currency into v_base from public.contact_pair_settings s
+      where s.user_lo = p_schedule.user_lo and s.user_hi = p_schedule.user_hi;
+      v_base := coalesce(v_base, 'USD');
+    end if;
 
-  if v_base is null then
-    return p_schedule.last_exchange_rate;
-  end if;
-  if upper(btrim(p_schedule.currency)) = upper(btrim(v_base)) then
-    return 1;
-  end if;
+    if v_base is null then
+      return p_schedule.last_exchange_rate;
+    end if;
+    if upper(btrim(p_schedule.currency)) = upper(btrim(v_base)) then
+      return 1;
+    end if;
 
-  select r.rates into v_rates
-  from public.exchange_rates r
-  where r.day <= v_today and r.day >= v_today - 7
-  order by r.day desc
-  limit 1;
+    select r.rates into v_rates
+    from public.exchange_rates r
+    where r.day <= v_today and r.day >= v_today - 7
+    order by r.day desc
+    limit 1;
 
-  if v_rates is not null
-    and jsonb_typeof(v_rates -> upper(btrim(p_schedule.currency))) = 'number'
-    and jsonb_typeof(v_rates -> upper(btrim(v_base))) = 'number' then
-    v_from := (v_rates ->> upper(btrim(p_schedule.currency)))::numeric;
-    v_to := (v_rates ->> upper(btrim(v_base)))::numeric;
-    if v_from > 0 and v_to > 0 then
-      v_rate := v_to / v_from;
-      if v_rate >= 0.000001 and v_rate < 1000000000 then
-        return v_rate;
+    if v_rates is not null
+      and jsonb_typeof(v_rates -> upper(btrim(p_schedule.currency))) = 'number'
+      and jsonb_typeof(v_rates -> upper(btrim(v_base))) = 'number' then
+      v_from := (v_rates ->> upper(btrim(p_schedule.currency)))::numeric;
+      v_to := (v_rates ->> upper(btrim(v_base)))::numeric;
+      if v_from > 0 and v_to > 0 then
+        v_rate := v_to / v_from;
+        if v_rate >= 0.000001 and v_rate < 1000000000 then
+          return v_rate;
+        end if;
       end if;
     end if;
-  end if;
+  exception when others then
+    return p_schedule.last_exchange_rate;
+  end;
 
   return p_schedule.last_exchange_rate;
 end;
@@ -2898,11 +2902,13 @@ $$;
 revoke execute on function public._schedule_rate(public.recurring_schedules)
   from public, anon, authenticated;
 
--- Step one of the refresh: ask pg_net to GET the rates. pg_net is asynchronous
--- (the request runs after this statement's transaction commits and the answer
--- lands in net._http_response), so storing it is a second step. net.* is only
--- referenced through dynamic SQL, so this function can be created, and does
--- nothing, on a project without pg_net. Returns pg_net's request id, or null.
+-- Step one of the refresh: ask pg_net to GET the rates, and record the request id
+-- it returns so step two reads only the response to this request (pg_net is
+-- asynchronous: the request runs after this statement's transaction commits and
+-- the answer lands in net._http_response, which every pg_net user shares). Records
+-- older than 7 days are pruned here. net.* is only referenced through dynamic SQL,
+-- so this function can be created, and does nothing, on a project without pg_net.
+-- Returns pg_net's request id, or null.
 create or replace function public._refresh_exchange_rates_fire()
 returns bigint
 language plpgsql
@@ -2920,7 +2926,13 @@ begin
     return null;
   end if;
 
-  execute 'select net.http_get($1)' into v_id using c_url;
+  delete from public.exchange_rate_requests where requested_at < now() - interval '7 days';
+
+  execute 'select net.http_get(url := $1, timeout_milliseconds := 10000)' into v_id using c_url;
+  if v_id is not null then
+    insert into public.exchange_rate_requests (id) values (v_id)
+    on conflict (id) do update set requested_at = now();
+  end if;
   return v_id;
 end;
 $$;
@@ -2928,17 +2940,19 @@ $$;
 revoke execute on function public._refresh_exchange_rates_fire()
   from public, anon, authenticated;
 
--- Step two: take the newest exchange-rate response pg_net has recorded in the
--- last hour (other requests share net._http_response, so a response counts only
--- if its body is a JSON object with a "rates" key), validate it and upsert
--- today's (UTC) row. Rejected, and nothing written, when: the status is not 200;
--- result is not 'success'; rates is not a non-empty object of numbers between
--- 1e-9 and 1e9 (positive and sane: units of a currency per USD);
--- USD is not exactly 1; or any currency moved more than 50% against the latest
--- row from the previous 7 days (a one-off bad payload cannot replace good rates;
--- a baseline older than that is no baseline, so a real devaluation cannot lock
--- the refresh out for good). Returns 'stored' or the reason it did not store;
--- a rejection is also a WARNING in the Postgres log. Returns without raising when
+-- Step two: take the response to the newest request _refresh_exchange_rates_fire
+-- made in the last hour (only responses to recorded request ids are read; other
+-- pg_net traffic is ignored), validate it and upsert today's (UTC) row. Rejected,
+-- and nothing written, when: there is no recent request or no response to it yet;
+-- the fetch timed out or failed (no status); the status is not 200; the body is
+-- not a JSON object; result is not 'success'; rates is not a non-empty object of
+-- numbers between 1e-9 and 1e9 (positive and sane: units of a currency per USD);
+-- USD is not exactly 1; or any currency moved more than 50% against the latest row
+-- from the previous 7 days (a one-off bad payload cannot replace good rates; a
+-- baseline older than that is no baseline, so a real devaluation cannot lock the
+-- refresh out for good). Returns 'stored' or the reason it did not store. Every
+-- rejection is also a generic WARNING in the Postgres log (the reason only: never
+-- the response body or pg_net's error text). Does nothing, without raising, when
 -- pg_net is absent.
 create or replace function public._refresh_exchange_rates_store()
 returns text
@@ -2948,10 +2962,11 @@ set search_path = public, pg_temp
 as $$
 declare
   v_today date := (now() at time zone 'UTC')::date;
-  v_row record;
-  v_body jsonb;
+  v_request bigint;
+  v_content text;
   v_status int;
-  v_found boolean := false;
+  v_found boolean;
+  v_body jsonb;
   v_rates jsonb;
   v_prev jsonb;
   v_bad int;
@@ -2961,43 +2976,53 @@ begin
     return 'pg_net is not available';
   end if;
 
-  for v_row in execute
-    'select status_code, content from net._http_response
-     where created > now() - interval ''1 hour'' order by created desc, id desc limit 20'
-  loop
-    begin
-      v_body := v_row.content::jsonb;
-    exception when others then
-      continue;
-    end;
-    if jsonb_typeof(v_body) = 'object' and v_body ? 'rates' then
-      v_status := v_row.status_code;
-      v_found := true;
-      exit;
-    end if;
-  end loop;
+  select r.id into v_request
+  from public.exchange_rate_requests r
+  where r.requested_at > now() - interval '1 hour'
+  order by r.requested_at desc, r.id desc
+  limit 1;
 
-  if not v_found then
-    return 'no exchange-rate response in the last hour';
+  if v_request is null then
+    v_reason := 'no recent request';
+  else
+    execute 'select true, status_code, content from net._http_response where id = $1'
+      into v_found, v_status, v_content using v_request;
+    if v_found is not true then
+      v_reason := 'no response to the latest request yet';
+    elsif v_status is null then
+      v_reason := 'the fetch failed or timed out';
+    elsif v_status <> 200 then
+      v_reason := 'the fetch returned status ' || v_status;
+    end if;
   end if;
 
-  v_rates := v_body -> 'rates';
-  if v_status is distinct from 200 then
-    v_reason := 'rejected: the fetch returned status ' || coalesce(v_status::text, 'none');
-  elsif v_body ->> 'result' is distinct from 'success' then
-    v_reason := 'rejected: the response is not a success';
-  elsif jsonb_typeof(v_rates) is distinct from 'object' or v_rates = '{}'::jsonb then
-    v_reason := 'rejected: rates is not a non-empty object';
-  else
-    select count(*) into v_bad
-    from jsonb_each(v_rates) e
-    where case when jsonb_typeof(e.value) = 'number'
-      then (e.value #>> '{}')::numeric not between 0.000000001 and 1000000000 else true end;
-    if v_bad > 0 then
-      v_reason := 'rejected: ' || v_bad || ' rate(s) are not numbers between 1e-9 and 1e9';
-    elsif jsonb_typeof(v_rates -> 'USD') is distinct from 'number'
-      or (v_rates ->> 'USD')::numeric <> 1 then
-      v_reason := 'rejected: the USD rate is not 1';
+  if v_reason is null then
+    begin
+      v_body := v_content::jsonb;
+    exception when others then
+      v_reason := 'the response is not JSON';
+    end;
+  end if;
+
+  if v_reason is null then
+    v_rates := case when jsonb_typeof(v_body) = 'object' then v_body -> 'rates' end;
+    if jsonb_typeof(v_body) is distinct from 'object' then
+      v_reason := 'the response is not an object';
+    elsif v_body ->> 'result' is distinct from 'success' then
+      v_reason := 'the response is not a success';
+    elsif jsonb_typeof(v_rates) is distinct from 'object' or v_rates = '{}'::jsonb then
+      v_reason := 'rates is not a non-empty object';
+    else
+      select count(*) into v_bad
+      from jsonb_each(v_rates) e
+      where case when jsonb_typeof(e.value) = 'number'
+        then (e.value #>> '{}')::numeric not between 0.000000001 and 1000000000 else true end;
+      if v_bad > 0 then
+        v_reason := v_bad || ' rate(s) are not numbers between 1e-9 and 1e9';
+      elsif jsonb_typeof(v_rates -> 'USD') is distinct from 'number'
+        or (v_rates ->> 'USD')::numeric <> 1 then
+        v_reason := 'the USD rate is not 1';
+      end if;
     end if;
   end if;
 
@@ -3022,14 +3047,14 @@ begin
         else false
       end;
       if v_bad > 0 then
-        v_reason := 'rejected: ' || v_bad || ' rate(s) moved more than 50% since the previous day';
+        v_reason := v_bad || ' rate(s) moved more than 50% since the previous day';
       end if;
     end if;
   end if;
 
   if v_reason is not null then
-    raise warning 'exchange rates not stored (%)', v_reason;
-    return v_reason;
+    raise warning 'exchange rates not stored: %', v_reason;
+    return 'not stored: ' || v_reason;
   end if;
 
   insert into public.exchange_rates (day, rates, fetched_at)

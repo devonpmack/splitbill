@@ -144,7 +144,8 @@ select cron.schedule('evenpot-exchange-rates-store', '55 4 * * *', $$select publ
 
 A saved day is used for up to 7 days. A response that is not a success, has a
 rate that is not a positive number, or moves any currency by more than 50 %
-from the previous day is thrown away and the earlier rates stay. To check it,
+from the previous day is thrown away and the earlier rates stay, and the
+reason is written to the Postgres log as a warning (*Logs → Postgres*). To check it,
 run `select jobname, schedule from cron.job;` and, the morning after,
 `select day, fetched_at from public.exchange_rates order by day desc limit 3;`.
 To try it now, run `select public._refresh_exchange_rates_fire();`, wait a few
