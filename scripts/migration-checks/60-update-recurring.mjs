@@ -5,8 +5,10 @@
 // alone, pending rows beyond a lowered limit are deleted, and the engine tops
 // the series up afterwards. Schedules are inserted as the owner (the create RPC
 // is another piece) and filled with _materialise_one at explicit horizons.
-// Years in the fixtures are chosen so "now" (the real clock) falls inside the
-// series; every expectation about past/pending is derived from date > now().
+// Every fixture date is derived from the database clock (a yearly series that
+// starts five years ago, so five occurrences are past and the next ones are
+// pending), and every past/pending expectation from date > now(), so the suite
+// holds at any date.
 //
 // Locking (documented, not testable on a single connection): the function takes
 // `select ... for update` on the schedule row first, so it serialises against
@@ -23,6 +25,11 @@ export default async function updateRecurring({ db, asUser, signUp, rejects, che
   const kim = await signUp("ur-kim@example.com", "Kim");
 
   const q = async (sql, params) => (await db.query(sql, params)).rows;
+  const START = (await q(`select ((now() at time zone 'utc')::date - interval '5 years' + interval '2 days')::date::text as d`))[0].d;
+  const HZ = (await q(`select (now() + interval '4 years 10 days')::text as t`))[0].t;
+  const fut = async (years) =>
+    (await q(`select ((now() at time zone 'utc')::date + make_interval(years => $1::int))::date::text as d`, [years]))[0].d;
+  const occ = async (start, n) => (await q(`select public._occurrence_date($1::date, 'yearly', $2::int)::text as d`, [start, n]))[0].d;
   const makeGroup = (name, emails, currency = "USD") =>
     asUser(dan, async () => (await db.query(`select * from public.create_group_with_members($1, $2::text[], $3)`, [name, emails, currency])).rows[0].id);
   const groupId = await makeGroup("Upd", ["ur-erin@example.com", "ur-fay@example.com"]);
@@ -40,7 +47,7 @@ export default async function updateRecurring({ db, asUser, signUp, rejects, che
       kind: "group", group_id: groupId, created_by: dan, paid_by: dan, description: "Rent",
       amount: 30, currency: "USD", last_exchange_rate: 1, split_type: "equal",
       splits: JSON.stringify([{ userId: dan, amount: 15, baseAmount: 15 }, { userId: erin, amount: 15, baseAmount: 15 }]),
-      start_date: "2020-01-01", tz: "UTC", frequency: "yearly", ...fields,
+      start_date: START, tz: "UTC", frequency: "yearly", ...fields,
     };
     const cols = Object.keys(row);
     const { rows } = await db.query(
@@ -155,7 +162,7 @@ export default async function updateRecurring({ db, asUser, signUp, rejects, che
 
   // ---- A yearly series whose first years are past: edits rewrite pending rows only -
   const Y = await mk({ description: "Rent" });
-  check((await one(Y, "2031-06-01T00:00:00Z")) === 12, "fixture: a yearly series 2020..2031 has 12 occurrences");
+  check((await one(Y, HZ)) === 10, "fixture: a yearly series that started five years ago and runs to four years ahead has 10 occurrences");
   const y0 = await snapshot(Y);
   const pending0 = y0.filter((r) => r.pending);
   const past0 = y0.filter((r) => !r.pending);
@@ -176,7 +183,7 @@ export default async function updateRecurring({ db, asUser, signUp, rejects, che
   const after1 = await snapshot(Y);
   check(
     ret1.id === Y && ret1.description === "Rent v2" && Number(ret1.amount) === 60 && same(ret1, s1) &&
-      Number(s1.next_index) === 12 && s1.stopped_at === null,
+      Number(s1.next_index) === 10 && s1.stopped_at === null,
     "the updated schedule row is returned (trimmed description, amount 60) and is the stored row; cursor unchanged"
   );
   check(
@@ -228,7 +235,7 @@ export default async function updateRecurring({ db, asUser, signUp, rejects, che
   await upd(dan, Y, { description: "Rent v4" });
   const afterSkip = await snapshot(Y);
   check(
-    !afterSkip.some((r) => r.d === skipped.d) && Number((await sched(Y)).next_index) === 12 &&
+    !afterSkip.some((r) => r.d === skipped.d) && Number((await sched(Y)).next_index) === 10 &&
       afterSkip.filter(rewritable).every((r) => r.row.description === "Rent v4"),
     "an edit does not bring back a deleted (skipped) pending occurrence and still rewrites the rest"
   );
@@ -289,8 +296,8 @@ export default async function updateRecurring({ db, asUser, signUp, rejects, che
   );
 
   // ---- Limits: clearing, raising ---------------------------------------------------------
-  const L = await mk({ max_count: 20, end_date: "2045-12-31", description: "Limits" });
-  await one(L, "2031-06-01T00:00:00Z");
+  const L = await mk({ max_count: 20, end_date: await fut(30), description: "Limits" });
+  await one(L, HZ);
   const lRows = await snapshot(L);
   await upd(dan, L, { clear_end_date: true });
   const l1 = await sched(L);
@@ -298,37 +305,39 @@ export default async function updateRecurring({ db, asUser, signUp, rejects, che
   await upd(dan, L, { clear_max_count: true });
   const l2 = await sched(L);
   check(l2.max_count === null && l2.end_date === null && l2.stopped_at === null, "p_clear_max_count clears the max count");
-  await upd(dan, L, { end_date: "2050-01-01", clear_max_count: true });
+  const lEnd = await fut(40);
+  await upd(dan, L, { end_date: lEnd, clear_max_count: true });
   const l3 = (await q(`select to_char(end_date, 'YYYY-MM-DD') as e, max_count from public.recurring_schedules where id = $1`, [L]))[0];
-  check(l3.e === "2050-01-01" && l3.max_count === null, "a limit can be set while the other is cleared in one call");
+  check(l3.e === lEnd && l3.max_count === null, "a limit can be set while the other is cleared in one call");
   check(same(await snapshot(L), lRows), "clearing or raising limits creates and deletes nothing (the cursor is where it was)");
 
-  const R = await mk({ start_date: "2040-01-01", max_count: 4, description: "Raise" });
-  await one(R, "2041-06-01T00:00:00Z");
+  const R = await mk({ start_date: await fut(3), max_count: 4, description: "Raise" });
+  await one(R, HZ);
   await upd(dan, R, { max_count: 10 });
   const rRow = await sched(R);
   check(rRow.max_count === 10 && rRow.stopped_at === null && Number(rRow.next_index) === 2, "raising max_count keeps the schedule active at its cursor");
 
   // ---- Limits: lowering ----------------------------------------------------------------------
   const M = await mk({ max_count: 20, description: "Count lowered" });
-  await one(M, "2031-06-01T00:00:00Z");
+  await one(M, HZ);
   const mBefore = await snapshot(M);
   const mHand = mBefore[mBefore.length - 1];
   await handEdit(dan, mHand.id, "Mine");
   const mHandBefore = (await snapshot(M)).find((r) => r.id === mHand.id);
-  await upd(dan, M, { max_count: 9 });
+  const m7 = await occ(START, 7);
+  await upd(dan, M, { max_count: 7 });
   const mAfter = await snapshot(M);
-  const mGone = mBefore.filter((r) => rewritable(r) && r.d >= "2029-01-01" && r.id !== mHand.id).map((r) => r.id);
+  const mGone = mBefore.filter((r) => rewritable(r) && r.d >= m7 && r.id !== mHand.id).map((r) => r.id);
   check(
     mGone.length >= 1 && mAfter.every((r) => !mGone.includes(r.id)) &&
       mAfter.length === mBefore.length - mGone.length &&
       mBefore.filter((r) => !mGone.includes(r.id) && r.id !== mHand.id).every((r) => mAfter.some((a) => a.id === r.id)),
-    "lowering max_count to 9 deletes the pending non-hand-edited rows beyond occurrence 9 and nothing else"
+    "lowering max_count to 7 deletes the pending non-hand-edited rows beyond occurrence 7 and nothing else"
   );
   check(same(mAfter.find((r) => r.id === mHand.id), mHandBefore), "a hand-edited pending row beyond the new limit stays and still counts at its date");
   const mRow = await sched(M);
   check(
-    mRow.max_count === 9 && mRow.stopped_at !== null && mRow.stop_reason === "completed" && Number(mRow.next_index) === 12,
+    mRow.max_count === 7 && mRow.stopped_at !== null && mRow.stop_reason === "completed" && Number(mRow.next_index) === 10,
     "the series is completed (stop_reason 'completed') and the cursor stays where it was"
   );
   check(
@@ -341,7 +350,7 @@ export default async function updateRecurring({ db, asUser, signUp, rejects, che
   );
 
   const Z = await mk({ max_count: 20, description: "Below made" });
-  await one(Z, "2031-06-01T00:00:00Z");
+  await one(Z, HZ);
   const zBefore = await snapshot(Z);
   await upd(dan, Z, { max_count: 3 });
   const zAfter = await snapshot(Z);
@@ -351,12 +360,13 @@ export default async function updateRecurring({ db, asUser, signUp, rejects, che
     "a max_count below the number already created completes the schedule, deletes every pending row and no past row"
   );
 
-  const E = await mk({ end_date: "2045-12-31", description: "End lowered" });
-  await one(E, "2031-06-01T00:00:00Z");
+  const E = await mk({ end_date: await fut(30), description: "End lowered" });
+  const eEnd = (await q(`select (public._occurrence_date($1::date, 'yearly', 7) + 5)::text as d`, [START]))[0].d;
+  await one(E, HZ);
   const eBefore = await snapshot(E);
-  await upd(dan, E, { end_date: "2029-06-30" });
+  await upd(dan, E, { end_date: eEnd });
   const eAfter = await snapshot(E);
-  const eGone = eBefore.filter((r) => rewritable(r) && r.d > "2029-06-30");
+  const eGone = eBefore.filter((r) => rewritable(r) && r.d > eEnd);
   check(
     eGone.length >= 1 && same(eAfter, eBefore.filter((r) => !eGone.some((g) => g.id === r.id))) &&
       (await sched(E)).stop_reason === "completed",
@@ -380,7 +390,7 @@ export default async function updateRecurring({ db, asUser, signUp, rejects, che
     currency: "EUR", last_exchange_rate: 1.5, description: "Euro",
     splits: JSON.stringify([{ userId: dan, amount: 15, baseAmount: 1 }, { userId: erin, amount: 15, baseAmount: 1 }]),
   });
-  await one(X, "2031-06-01T00:00:00Z");
+  await one(X, HZ);
   await upd(dan, X, {
     amount: 10,
     splits: [{ userId: dan, amount: 3.33 }, { userId: erin, amount: 3.33 }, { userId: fay, amount: 3.34 }],
@@ -395,7 +405,7 @@ export default async function updateRecurring({ db, asUser, signUp, rejects, che
 
   // ---- Contact schedules ----------------------------------------------------------------------------
   const C = await mkContact({ description: "Contact rent" });
-  await one(C, "2031-06-01T00:00:00Z");
+  await one(C, HZ);
   const cBefore = await snapshot(C, "contact_expenses");
   const cPending = cBefore.filter((r) => r.pending);
   const cHand = cPending[cPending.length - 1];
@@ -437,7 +447,7 @@ export default async function updateRecurring({ db, asUser, signUp, rejects, che
   );
   const K = await mkContact({ user_lo: lo2, user_hi: hi2, created_by: jo, paid_by: kim, description: "Pair two",
     splits: JSON.stringify([{ userId: jo, amount: 10, baseAmount: 10 }, { userId: kim, amount: 10, baseAmount: 10 }]) });
-  await one(K, "2031-06-01T00:00:00Z");
+  await one(K, HZ);
   await db.query(`delete from public.contacts where owner_id in ($1, $2) and contact_user_id in ($1, $2)`, [jo, kim]);
   const kMsg = await msg(() => upd(jo, K, { description: "Gone" }));
   check(/accepted contacts/.test(kMsg), `an edit after the contact was removed is refused (${kMsg})`);
@@ -447,7 +457,7 @@ export default async function updateRecurring({ db, asUser, signUp, rejects, che
     description: "Gone member",
     splits: JSON.stringify([{ userId: dan, amount: 15, baseAmount: 15 }, { userId: fay, amount: 15, baseAmount: 15 }]),
   });
-  await one(G, "2031-06-01T00:00:00Z");
+  await one(G, HZ);
   await db.query(`delete from public.group_members where group_id = $1 and user_id = $2`, [groupId, fay]);
   const gMsg = await msg(() => upd(dan, G, { description: "Still includes Fay" }));
   check(
@@ -462,7 +472,7 @@ export default async function updateRecurring({ db, asUser, signUp, rejects, che
 
   // ---- Atomic: a failure while rewriting rolls back the edit, the deletions and earlier rows -----------
   const A = await mk({ max_count: 20, description: "Atomic" });
-  await one(A, "2031-06-01T00:00:00Z");
+  await one(A, HZ);
   const aRows = await snapshot(A);
   const aPending = aRows.filter(rewritable);
   const aSched = await sched(A);
