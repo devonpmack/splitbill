@@ -11,6 +11,7 @@ import {
   useUpdateContactPayment,
 } from "@/lib/queries/useContactPayments";
 import { useAuth } from "@/lib/auth";
+import { useDayPick } from "@/lib/useDayPick";
 import { useHydrateOnce } from "@/lib/useHydrateOnce";
 import {
   formatContactSettleLabel,
@@ -53,6 +54,7 @@ export function ContactSettleUpScreen() {
   const existingPayment = isEdit
     ? payments?.find((p) => p.id === paymentId)
     : undefined;
+  const day = useDayPick(existingPayment?.date);
 
   // In create mode the prefill is derived from the pair balance, so it must
   // wait for that query -- hydrating against the default 0 forced the
@@ -87,6 +89,10 @@ export function ContactSettleUpScreen() {
       showError("Please enter a valid amount");
       return;
     }
+    if (day.isInvalid) {
+      showError("Please enter a valid date");
+      return;
+    }
     if (!user?.id || !contactUserId) {
       showError("Something went wrong. Please try again.");
       return;
@@ -105,6 +111,7 @@ export function ContactSettleUpScreen() {
           amount: totalAmount,
           note: note.trim() || undefined,
           currency: pairCurrency,
+          date: day.dateParam,
         });
         showSuccess("Payment updated!");
       } else {
@@ -115,6 +122,7 @@ export function ContactSettleUpScreen() {
           amount: totalAmount,
           note: note.trim() || undefined,
           currency: pairCurrency,
+          date: day.dateParam,
         });
         showSuccess("Payment recorded!");
       }
@@ -150,6 +158,8 @@ export function ContactSettleUpScreen() {
           onAmountChange={setAmount}
           note={note}
           onNoteChange={setNote}
+          date={day.value}
+          onDateChange={day.onChange}
           pairCurrency={pairCurrency}
           isPending={isPending}
           onSubmit={handleSubmit}

@@ -63,3 +63,19 @@ export function invalidateContactPairQueries(
   invalidateContactQueries(queryClient);
   invalidateActivityQueries(queryClient);
 }
+
+// Rows the server created on its own (a due repeat of a recurring expense) are
+// not tied to one group or contact pair, so every list and balance that reads
+// expenses is refetched.
+export function invalidateRecurringCreated(queryClient: QueryClient) {
+  queryClient.invalidateQueries({ queryKey: ["expenses"] });
+  queryClient.invalidateQueries({ queryKey: ["contact-expenses"] });
+  queryClient.invalidateQueries({ queryKey: ["balances"] });
+  queryClient.invalidateQueries({ queryKey: ["group-pairwise-all"] });
+  queryClient.invalidateQueries({ queryKey: ["group-simplified"] });
+  queryClient.invalidateQueries({ queryKey: ["contact-pair-balance"] });
+  queryClient.invalidateQueries({ queryKey: ["total-balance"] });
+  queryClient.invalidateQueries({ queryKey: ["recurring-schedules"] });
+  invalidateContactQueries(queryClient);
+  invalidateActivityQueries(queryClient);
+}

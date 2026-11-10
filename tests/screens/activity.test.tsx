@@ -1,36 +1,60 @@
-import { screen, fireEvent } from "@testing-library/react-native";
+import { act, screen, fireEvent } from "@testing-library/react-native";
 import { renderWithPaper } from "../helpers/testUtils";
 import Activity from "@/app/(tabs)/activity/index";
+import { formatDay } from "@/lib/dates";
 
 const mockRefetch = jest.fn();
+const mockRefetchUpcoming = jest.fn();
 const mockRefetchPayments = jest.fn();
+const mockRefetchUpcomingPayments = jest.fn();
+const mockRefetchUpcomingContactExpenses = jest.fn();
+const mockRefetchUpcomingContactPayments = jest.fn();
 const mockRefetchContactExpenses = jest.fn();
 const mockRefetchContactPayments = jest.fn();
 const mockRefetchSimplifyEvents = jest.fn();
 
 jest.mock("expo-router", () => ({ router: { push: jest.fn() } }));
 jest.mock("@/lib/auth", () => ({ useAuth: jest.fn() }));
-jest.mock("@/lib/queries/useExpenses", () => ({ useRecentActivity: jest.fn() }));
-jest.mock("@/lib/queries/usePayments", () => ({ useRecentPayments: jest.fn() }));
+jest.mock("@/lib/queries/useExpenses", () => ({
+  useRecentActivity: jest.fn(),
+  useUpcomingActivity: jest.fn(),
+}));
+jest.mock("@/lib/queries/usePayments", () => ({
+  useRecentPayments: jest.fn(),
+  useUpcomingPayments: jest.fn(),
+}));
 jest.mock("@/lib/queries/useContactExpenses", () => ({
   useRecentContactActivity: jest.fn(),
+  useUpcomingContactActivity: jest.fn(),
 }));
 jest.mock("@/lib/queries/useContactPayments", () => ({
   useRecentContactPayments: jest.fn(),
+  useUpcomingContactPayments: jest.fn(),
 }));
 jest.mock("@/lib/queries/useGroups", () => ({
   useRecentGroupSettingChanges: jest.fn(),
 }));
+jest.mock("@/lib/queries/useRecurringSchedules", () => ({
+  useScheduleFrequencies: () => ({ data: {} }),
+}));
 
 import { router } from "expo-router";
 import { useAuth } from "@/lib/auth";
-import { useRecentActivity } from "@/lib/queries/useExpenses";
-import { useRecentPayments } from "@/lib/queries/usePayments";
+import {
+  useRecentActivity,
+  useUpcomingActivity,
+} from "@/lib/queries/useExpenses";
+import {
+  useRecentPayments,
+  useUpcomingPayments,
+} from "@/lib/queries/usePayments";
 import {
   useRecentContactActivity,
+  useUpcomingContactActivity,
 } from "@/lib/queries/useContactExpenses";
 import {
   useRecentContactPayments,
+  useUpcomingContactPayments,
 } from "@/lib/queries/useContactPayments";
 import { useRecentGroupSettingChanges } from "@/lib/queries/useGroups";
 
@@ -42,11 +66,49 @@ function setActivity(overrides?: { data?: unknown; isLoading?: boolean }) {
   });
 }
 
+function setUpcoming(overrides?: { data?: unknown; isLoading?: boolean }) {
+  (useUpcomingActivity as jest.Mock).mockReturnValue({
+    data: overrides?.data ?? [],
+    isLoading: overrides?.isLoading ?? false,
+    refetch: mockRefetchUpcoming,
+  });
+}
+
 function setPayments(overrides?: { data?: unknown; isLoading?: boolean }) {
   (useRecentPayments as jest.Mock).mockReturnValue({
     data: overrides?.data ?? [],
     isLoading: overrides?.isLoading ?? false,
     refetch: mockRefetchPayments,
+  });
+}
+
+function setUpcomingPayments(overrides?: { data?: unknown; isLoading?: boolean }) {
+  (useUpcomingPayments as jest.Mock).mockReturnValue({
+    data: overrides?.data ?? [],
+    isLoading: overrides?.isLoading ?? false,
+    refetch: mockRefetchUpcomingPayments,
+  });
+}
+
+function setUpcomingContactExpenses(overrides?: {
+  data?: unknown;
+  isLoading?: boolean;
+}) {
+  (useUpcomingContactActivity as jest.Mock).mockReturnValue({
+    data: overrides?.data ?? [],
+    isLoading: overrides?.isLoading ?? false,
+    refetch: mockRefetchUpcomingContactExpenses,
+  });
+}
+
+function setUpcomingContactPayments(overrides?: {
+  data?: unknown;
+  isLoading?: boolean;
+}) {
+  (useUpcomingContactPayments as jest.Mock).mockReturnValue({
+    data: overrides?.data ?? [],
+    isLoading: overrides?.isLoading ?? false,
+    refetch: mockRefetchUpcomingContactPayments,
   });
 }
 
@@ -86,13 +148,21 @@ function setSimplifyEvents(overrides?: {
 beforeEach(() => {
   jest.clearAllMocks();
   mockRefetch.mockResolvedValue(undefined);
+  mockRefetchUpcoming.mockResolvedValue(undefined);
   mockRefetchPayments.mockResolvedValue(undefined);
+  mockRefetchUpcomingPayments.mockResolvedValue(undefined);
+  mockRefetchUpcomingContactExpenses.mockResolvedValue(undefined);
+  mockRefetchUpcomingContactPayments.mockResolvedValue(undefined);
   mockRefetchContactExpenses.mockResolvedValue(undefined);
   mockRefetchContactPayments.mockResolvedValue(undefined);
   mockRefetchSimplifyEvents.mockResolvedValue(undefined);
   (useAuth as jest.Mock).mockReturnValue({ user: { id: "u1" } });
   setActivity();
+  setUpcoming();
   setPayments();
+  setUpcomingPayments();
+  setUpcomingContactExpenses();
+  setUpcomingContactPayments();
   setContactExpenses();
   setContactPayments();
   setSimplifyEvents();
@@ -193,7 +263,7 @@ describe("Activity screen", () => {
         {
           id: "p1",
           amount: 20,
-          created_at: "2024-01-05",
+          date: "2024-01-05",
           paid_by: "u1",
           paid_to: "u2",
           group_id: "g1",
@@ -211,13 +281,59 @@ describe("Activity screen", () => {
     expect(screen.getByText("$20.00")).toBeTruthy();
   });
 
+  it("dates a payment by its date, not when it was recorded", async () => {
+    setPayments({
+      data: [
+        {
+          id: "p1",
+          amount: 20,
+          created_at: "2023-12-01T12:00:00Z",
+          date: "2024-02-01T12:00:00Z",
+          paid_by: "u1",
+          paid_to: "u2",
+          group_id: "g1",
+          note: null,
+          payer: { full_name: "Me" },
+          payee: { full_name: "Bob" },
+          groups: { name: "Trip" },
+        },
+      ],
+    });
+    setContactPayments({
+      data: [
+        {
+          id: "cp1",
+          amount: 5,
+          created_at: "2023-11-01T12:00:00Z",
+          date: "2024-03-01T12:00:00Z",
+          paid_by: "u1",
+          paid_to: "u2",
+          note: null,
+          payer: { full_name: "Me" },
+          payee: { full_name: "Bob" },
+        },
+      ],
+    });
+    await renderWithPaper(<Activity />);
+
+    expect(
+      screen.getByText(formatDay("2024-02-01T12:00:00Z"))
+    ).toBeTruthy();
+    expect(
+      screen.getByText(formatDay("2024-03-01T12:00:00Z"))
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(formatDay("2023-12-01T12:00:00Z"))
+    ).toBeNull();
+  });
+
   it("shows a payment received by the current user", async () => {
     setPayments({
       data: [
         {
           id: "p2",
           amount: 15,
-          created_at: "2024-01-06",
+          date: "2024-01-06",
           paid_by: "u3",
           paid_to: "u1",
           group_id: "g2",
@@ -298,7 +414,7 @@ describe("Activity screen", () => {
           id: "cp1",
           amount: 18,
           currency: "USD",
-          created_at: "2024-01-09",
+          date: "2024-01-09",
           paid_by: "u1",
           paid_to: "u2",
           note: "rent",
@@ -321,7 +437,7 @@ describe("Activity screen", () => {
           id: "cp2",
           amount: 9,
           currency: "USD",
-          created_at: "2024-01-10",
+          date: "2024-01-10",
           paid_by: "u3",
           paid_to: "u1",
           note: null,
@@ -427,7 +543,7 @@ describe("Activity screen", () => {
         {
           id: "p1",
           amount: 20,
-          created_at: "2024-01-05",
+          date: "2024-01-05",
           paid_by: "u1",
           paid_to: "u2",
           group_id: "g1",
@@ -450,7 +566,7 @@ describe("Activity screen", () => {
         {
           id: "p1",
           amount: 20,
-          created_at: "2024-01-05",
+          date: "2024-01-05",
           paid_by: "u1",
           paid_to: "u2",
           group_id: "g1",
@@ -513,7 +629,7 @@ describe("Activity screen", () => {
           id: "cp1",
           amount: 18,
           currency: "USD",
-          created_at: "2024-01-09",
+          date: "2024-01-09",
           paid_by: "u1",
           paid_to: "u2",
           note: "rent",
@@ -559,4 +675,354 @@ describe("Activity screen", () => {
     expect(router.push).toHaveBeenCalledWith("/activity/group/g1");
   });
 
+  describe("upcoming transactions", () => {
+    const NOW = new Date("2026-11-09T12:00:00.000Z");
+    const PAST = "2026-11-01T12:00:00.000Z";
+    const expense = (id: string, description: string, date: string) => ({
+      id,
+      description,
+      amount: 30,
+      paid_by: "u1",
+      group_id: "g1",
+      payer: { full_name: "Me" },
+      groups: { name: "Trip" },
+      date,
+      expense_splits: [
+        { user_id: "u1", amount: 10 },
+        { user_id: "u2", amount: 20 },
+      ],
+    });
+    const contactExpense = (id: string, description: string, date: string) => ({
+      id,
+      description,
+      amount: 8,
+      paid_by: "u1",
+      payer: { full_name: "Me" },
+      user_lo: "u1",
+      user_hi: "u2",
+      user_lo_profile: { id: "u1", full_name: "Me" },
+      user_hi_profile: { id: "u2", full_name: "Bob" },
+      date,
+      expense_splits: [
+        { user_id: "u1", amount: 4 },
+        { user_id: "u2", amount: 4 },
+      ],
+    });
+    const payment = (id: string, amount: number, date: string) => ({
+      id,
+      amount,
+      date,
+      paid_by: "u1",
+      paid_to: "u2",
+      group_id: "g1",
+      note: null,
+      payer: { full_name: "Me" },
+      payee: { full_name: "Bob" },
+      groups: { name: "Trip" },
+    });
+    const contactPayment = (id: string, amount: number, date: string) => ({
+      id,
+      amount,
+      date,
+      paid_by: "u1",
+      paid_to: "u2",
+      note: null,
+      payer: { full_name: "Me" },
+      payee: { full_name: "Bob" },
+    });
+
+    const soon = () => new Date(NOW.getTime() + 10_000).toISOString();
+
+    beforeEach(() => {
+      jest.useFakeTimers({ now: NOW });
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it("shows an Upcoming group above the feed with every kind of future row, soonest first", async () => {
+      setUpcoming({
+        data: [expense("e-up", "Rent", "2026-12-01T00:00:00.000Z")],
+      });
+      setPayments({
+        data: [
+          payment("p-up", 21, "2026-11-12T00:00:00.000Z"),
+          payment("p-past", 22, PAST),
+        ],
+      });
+      setContactExpenses({
+        data: [contactExpense("ce-up", "Gym", "2026-11-20T00:00:00.000Z")],
+      });
+      setContactPayments({
+        data: [contactPayment("cp-up", 23, "2026-11-30T00:00:00.000Z")],
+      });
+      setActivity({ data: [expense("e-past", "Dinner", PAST)] });
+      await renderWithPaper(<Activity />);
+
+      // Heading plus a tag on each of the four upcoming rows.
+      expect(screen.getAllByText("Upcoming")).toHaveLength(5);
+      expect(screen.getByText("History")).toBeTruthy();
+      // Each upcoming row says when it starts counting; a past row shows its date.
+      expect(
+        screen.getByText(`Counts from ${formatDay("2026-12-01T00:00:00.000Z")}`)
+      ).toBeTruthy();
+      expect(screen.getAllByText(/^Counts from /)).toHaveLength(4);
+      const order = screen
+        .getAllByText(/^(Rent|Gym|Dinner|\$21\.00|\$23\.00|\$22\.00)$/)
+        .map((node) => node.props.children);
+      expect(order).toEqual([
+        "$21.00",
+        "Gym",
+        "$23.00",
+        "Rent",
+        // Past rows follow, newest first.
+        "Dinner",
+        "$22.00",
+      ]);
+    });
+
+    it("shows no Upcoming group when nothing is future-dated", async () => {
+      setActivity({ data: [expense("e-past", "Dinner", PAST)] });
+      await renderWithPaper(<Activity />);
+
+      expect(screen.queryByText("Upcoming")).toBeNull();
+      expect(screen.getByText("Dinner")).toBeTruthy();
+    });
+
+    it("shows only the Upcoming group, not the empty state, when all activity is future-dated", async () => {
+      setContactPayments({
+        data: [contactPayment("cp-up", 23, "2026-11-30T00:00:00.000Z")],
+      });
+      await renderWithPaper(<Activity />);
+
+      expect(screen.getByText("$23.00")).toBeTruthy();
+      expect(screen.queryByText("No recent activity")).toBeNull();
+    });
+
+    it("lists a future payment under Upcoming only, with no History heading", async () => {
+      setPayments({ data: [payment("p-up", 21, "2026-11-12T00:00:00.000Z")] });
+      await renderWithPaper(<Activity />);
+
+      expect(screen.getAllByText("Upcoming")).toHaveLength(2);
+      expect(screen.queryByText("History")).toBeNull();
+    });
+
+    it("treats a row dated exactly now as past", async () => {
+      setPayments({ data: [payment("p-now", 21, NOW.toISOString())] });
+      await renderWithPaper(<Activity />);
+
+      expect(screen.getByText("$21.00")).toBeTruthy();
+      expect(screen.queryByText("Upcoming")).toBeNull();
+    });
+
+    it("waits for the upcoming query before leaving the loading state", async () => {
+      setUpcoming({ isLoading: true });
+      await renderWithPaper(<Activity />);
+
+      expect(screen.queryByText("No recent activity")).toBeNull();
+    });
+
+    it("moves a row into the feed and refetches when its date arrives", async () => {
+      setUpcoming({
+        data: [
+          expense("e-up", "Rent", new Date(NOW.getTime() + 10_000).toISOString()),
+        ],
+      });
+      await renderWithPaper(<Activity />);
+      expect(screen.getAllByText("Upcoming")).toHaveLength(2);
+
+      await act(async () => {
+        jest.advanceTimersByTime(12_000);
+      });
+
+      expect(screen.queryByText("Upcoming")).toBeNull();
+      expect(screen.getByText("Rent")).toBeTruthy();
+      expect(mockRefetchUpcoming).toHaveBeenCalled();
+      expect(mockRefetch).toHaveBeenCalled();
+    });
+
+    it.each([
+      ["a group payment", () => setPayments, () => payment("p", 21, soon())],
+      [
+        "a contact expense",
+        () => setContactExpenses,
+        () => contactExpense("ce", "Gym", soon()),
+      ],
+      [
+        "a contact payment",
+        () => setContactPayments,
+        () => contactPayment("cp", 23, soon()),
+      ],
+    ])("starts the timer from the date of %s", async (_name, setter, row) => {
+      setter()({ data: [row()] });
+      await renderWithPaper(<Activity />);
+      expect(screen.getAllByText("Upcoming")).toHaveLength(2);
+
+      await act(async () => {
+        jest.advanceTimersByTime(12_000);
+      });
+
+      expect(screen.queryByText("Upcoming")).toBeNull();
+    });
+
+    it("refetches the upcoming expenses along with everything else on refresh", async () => {
+      await renderWithPaper(<Activity />);
+
+      await act(async () => {
+        screen.getByTestId("activity-feed").props.refreshControl.props.onRefresh();
+      });
+
+      expect(mockRefetchUpcoming).toHaveBeenCalled();
+    });
+
+    it.each([
+      ["a future payment from its own read", () => setUpcomingPayments, () => payment("p", 21, soon())],
+      [
+        "a future contact expense from its own read",
+        () => setUpcomingContactExpenses,
+        () => contactExpense("ce", "Gym", soon()),
+      ],
+      [
+        "a future contact payment from its own read",
+        () => setUpcomingContactPayments,
+        () => contactPayment("cp", 23, soon()),
+      ],
+      ["a row in the recent expenses", () => setActivity, () => expense("e", "Rent", soon())],
+    ])("starts the timer from the date of %s", async (_name, setter, row) => {
+      setter()({ data: [row()] });
+      await renderWithPaper(<Activity />);
+      expect(screen.getAllByText("Upcoming")).toHaveLength(2);
+
+      await act(async () => {
+        jest.advanceTimersByTime(12_000);
+      });
+
+      expect(screen.queryByText("Upcoming")).toBeNull();
+    });
+
+    it("refetches the three upcoming reads too on refresh", async () => {
+      await renderWithPaper(<Activity />);
+
+      await act(async () => {
+        screen.getByTestId("activity-feed").props.refreshControl.props.onRefresh();
+      });
+
+      expect(mockRefetchUpcomingPayments).toHaveBeenCalled();
+      expect(mockRefetchUpcomingContactExpenses).toHaveBeenCalled();
+      expect(mockRefetchUpcomingContactPayments).toHaveBeenCalled();
+    });
+
+    it.each([
+      ["payments", () => setUpcomingPayments],
+      ["contact expenses", () => setUpcomingContactExpenses],
+      ["contact payments", () => setUpcomingContactPayments],
+    ])("waits for the upcoming %s read before leaving the loading state", async (_name, setter) => {
+      setter()({ isLoading: true });
+      await renderWithPaper(<Activity />);
+
+      expect(screen.queryByText("No recent activity")).toBeNull();
+    });
+
+    describe("data that arrives after the screen has been open a while", () => {
+      const TEN_MIN = 10 * 60_000;
+
+      it("lists an expense the server already counts as history, not upcoming, and refetches nothing", async () => {
+        setActivity({ data: [expense("old", "Old lunch", "2026-11-08T12:00:00.000Z")] });
+        const view = await renderWithPaper(<Activity />);
+        expect(screen.queryByText("Upcoming")).toBeNull();
+
+        jest.setSystemTime(new Date(NOW.getTime() + TEN_MIN));
+        const created = new Date(Date.now() - 2_000).toISOString();
+        setActivity({
+          data: [
+            expense("new", "Fresh dinner", created),
+            expense("old", "Old lunch", "2026-11-08T12:00:00.000Z"),
+          ],
+        });
+        mockRefetch.mockClear();
+        await act(async () => {
+          await view.rerender(<Activity />);
+        });
+
+        expect(screen.getByText("Fresh dinner")).toBeTruthy();
+        expect(screen.queryByText("Upcoming")).toBeNull();
+        expect(screen.queryByText(/Counts from/)).toBeNull();
+
+        await act(async () => {
+          jest.advanceTimersByTime(60_000);
+        });
+        expect(screen.queryByText("Upcoming")).toBeNull();
+        expect(mockRefetch).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ["group payment", () => setPayments, () => payment("p", 21, new Date(Date.now() - 1_000).toISOString())],
+        [
+          "contact expense",
+          () => setContactExpenses,
+          () => contactExpense("ce", "Gym", new Date(Date.now() - 1_000).toISOString()),
+        ],
+        [
+          "contact payment",
+          () => setContactPayments,
+          () => contactPayment("cp", 23, new Date(Date.now() - 1_000).toISOString()),
+        ],
+      ])("lists a %s created after minutes on screen as history", async (_name, setter, row) => {
+        const view = await renderWithPaper(<Activity />);
+        jest.setSystemTime(new Date(NOW.getTime() + TEN_MIN));
+        setter()({ data: [row()] });
+        await act(async () => {
+          await view.rerender(<Activity />);
+        });
+        await act(async () => {
+          jest.advanceTimersByTime(60_000);
+        });
+
+        expect(screen.queryByText("Upcoming")).toBeNull();
+        expect(screen.queryByText("No recent activity")).toBeNull();
+      });
+
+      it("lists a simplify-debts event recorded after minutes on screen as history", async () => {
+        const view = await renderWithPaper(<Activity />);
+        jest.setSystemTime(new Date(NOW.getTime() + TEN_MIN));
+        setSimplifyEvents({
+          data: [
+            {
+              id: "sd1",
+              group_id: "g1",
+              actor_id: "u1",
+              enabled: true,
+              created_at: new Date(Date.now() - 1_000).toISOString(),
+              actor: { id: "u1", full_name: "Me" },
+              groups: { name: "Trip" },
+            },
+          ],
+        });
+        await act(async () => {
+          await view.rerender(<Activity />);
+        });
+        await act(async () => {
+          jest.advanceTimersByTime(60_000);
+        });
+
+        expect(screen.getByText("You turned on simplify debts")).toBeTruthy();
+        expect(screen.queryByText("Upcoming")).toBeNull();
+      });
+    });
+
+    it("opens an upcoming row for editing", async () => {
+      setUpcoming({
+        data: [expense("e-up", "Rent", "2026-12-01T00:00:00.000Z")],
+      });
+      await renderWithPaper(<Activity />);
+
+      await fireEvent.press(screen.getByLabelText("Edit expense"));
+
+      expect(router.push).toHaveBeenCalledWith({
+        pathname: "/group-add-expense",
+        params: { groupId: "g1", expenseId: "e-up" },
+      });
+    });
+  });
 });

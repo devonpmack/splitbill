@@ -6,10 +6,30 @@ import type {
   SplitType,
 } from "../types";
 import { useAuth } from "../auth";
+import { UPCOMING_OVERLAP_MS } from "../upcoming";
 import { getCurrencyDecimals } from "../currency";
 import { buildSplitsPayload, validateSplitsTotal } from "../utils";
 import { invalidateContactPairQueries } from "./invalidate";
 import { sortPair } from "./contact-pair";
+
+const ACTIVITY_LIMIT = 50;
+const ACTIVITY_CONTACT_EXPENSE_SELECT = `
+          id,
+          description,
+          amount,
+          currency,
+          date,
+          schedule_id,
+          occurrence_date,
+          hand_edited,
+          paid_by,
+          user_lo,
+          user_hi,
+          payer:profiles!contact_expenses_paid_by_fkey (*),
+          user_lo_profile:profiles!contact_expenses_user_lo_fkey (*),
+          user_hi_profile:profiles!contact_expenses_user_hi_fkey (*),
+          expense_splits:contact_expense_splits (user_id, amount)
+        `;
 
 export function useRecentContactActivity() {
   const { user } = useAuth();
@@ -19,24 +39,34 @@ export function useRecentContactActivity() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("contact_expenses")
-        .select(
-          `
-          id,
-          description,
-          amount,
-          currency,
-          date,
-          paid_by,
-          user_lo,
-          user_hi,
-          payer:profiles!contact_expenses_paid_by_fkey (*),
-          user_lo_profile:profiles!contact_expenses_user_lo_fkey (*),
-          user_hi_profile:profiles!contact_expenses_user_hi_fkey (*),
-          expense_splits:contact_expense_splits (user_id, amount)
-        `
-        )
+        .select(ACTIVITY_CONTACT_EXPENSE_SELECT)
+        .lte("date", new Date().toISOString())
         .order("date", { ascending: false })
-        .limit(50);
+        .limit(ACTIVITY_LIMIT);
+
+      if (error) throw error;
+      return data as unknown as ActivityContactExpense[];
+    },
+    enabled: !!user,
+  });
+}
+
+// Future-dated rows, soonest first; the recent read above leaves them out so
+// they cannot take its 50 slots. The key sits under the recent key's prefix, so
+// every activity invalidation covers it too. It starts UPCOMING_OVERLAP_MS before
+// now so a row dated between the two reads' clock readings is in one of them.
+export function useUpcomingContactActivity() {
+  const { user } = useAuth();
+
+  return useQuery({
+    queryKey: ["contact-activity", user?.id, "upcoming"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("contact_expenses")
+        .select(ACTIVITY_CONTACT_EXPENSE_SELECT)
+        .gt("date", new Date(Date.now() - UPCOMING_OVERLAP_MS).toISOString())
+        .order("date", { ascending: true })
+        .limit(ACTIVITY_LIMIT);
 
       if (error) throw error;
       return data as unknown as ActivityContactExpense[];

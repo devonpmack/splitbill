@@ -1,5 +1,5 @@
 import React, { ReactElement, ReactNode } from "react";
-import { act, render } from "@testing-library/react-native";
+import { act, fireEvent, render } from "@testing-library/react-native";
 import { PaperProvider } from "react-native-paper";
 import {
   QueryClient,
@@ -23,6 +23,45 @@ export async function actAsync<T>(fn: () => Promise<T>): Promise<T> {
     value = await fn();
   });
   return value!;
+}
+
+/**
+ * Pins `new Date()` / `Date.now()` to `now` while leaving every timer real, so
+ * promises, waitFor and React Query behave as usual. Pair with
+ * `jest.useRealTimers()` in afterEach.
+ */
+export function freezeNow(now: Date) {
+  jest.useFakeTimers({
+    now,
+    doNotFake: [
+      "nextTick",
+      "setImmediate",
+      "clearImmediate",
+      "setInterval",
+      "clearInterval",
+      "setTimeout",
+      "clearTimeout",
+      "queueMicrotask",
+      "requestAnimationFrame",
+      "cancelAnimationFrame",
+      "requestIdleCallback",
+      "cancelIdleCallback",
+      "hrtime",
+      "performance",
+    ],
+  });
+}
+
+/**
+ * Types into a DateField the way a device does: the native `change` event
+ * (carrying the raw text) fires before `changeText`.
+ */
+export async function typeDate(
+  input: Parameters<typeof fireEvent.changeText>[0],
+  text: string
+) {
+  await fireEvent(input, "change", { nativeEvent: { text } });
+  await fireEvent.changeText(input, text);
 }
 
 /**
@@ -86,6 +125,8 @@ type ChainMethod =
   | "select"
   | "eq"
   | "in"
+  | "lte"
+  | "gt"
   | "order"
   | "limit"
   | "single"
@@ -97,6 +138,8 @@ const CHAIN_METHODS: ChainMethod[] = [
   "select",
   "eq",
   "in",
+  "lte",
+  "gt",
   "order",
   "limit",
   "single",

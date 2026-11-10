@@ -4,6 +4,7 @@ import {
   getCurrencySymbol,
   type CurrencyCode,
 } from "./currency";
+import { partitionUpcoming } from "./upcoming";
 import type {
   ActivityContactExpense,
   ActivityContactPayment,
@@ -236,45 +237,78 @@ export function sortMembersSelfFirst<T extends MemberWithProfile>(
   });
 }
 
-// Merges the five activity queries into one newest-first feed. Each source is
-// tagged with the `kind` its card renders and the timestamp it sorts on.
-export function buildActivityFeed(sources: {
-  expenses?: ActivityExpense[];
-  payments?: ActivityPayment[];
-  contactExpenses?: ActivityContactExpense[];
-  contactPayments?: ActivityContactPayment[];
-  simplifyEvents?: ActivitySimplifyDebtsEvent[];
-}): ActivityFeedItem[] {
-  return sortByTimestampDesc<ActivityFeedItem>([
-    ...(sources.expenses ?? []).map((payload) => ({
+// The first occurrence of each id, so a row that two reads both return (the
+// recent and the upcoming window) is listed once.
+function uniqueById<T extends { id: string }>(...lists: (T[] | undefined)[]): T[] {
+  const seen = new Set<string>();
+  return lists.flatMap((list) => list ?? []).filter((row) => {
+    if (seen.has(row.id)) return false;
+    seen.add(row.id);
+    return true;
+  });
+}
+
+// Merges the activity queries into one feed. Each source is tagged with the
+// `kind` its card renders and the timestamp it sorts on. Rows dated after `now`
+// come back separately as `upcoming` (soonest first); `past` is newest first.
+// The recent reads leave future rows out, so they arrive through the
+// `upcoming*` sources (get_upcoming_expenses and the future-only reads); every
+// dated source is partitioned here so a row whose date passes since the fetch
+// moves to `past` without a refetch. A simplify-debts event happened when it
+// was recorded, so it is never upcoming, whatever this device's clock says.
+export function buildActivityFeed(
+  sources: {
+    expenses?: ActivityExpense[];
+    upcomingExpenses?: ActivityExpense[];
+    payments?: ActivityPayment[];
+    upcomingPayments?: ActivityPayment[];
+    contactExpenses?: ActivityContactExpense[];
+    upcomingContactExpenses?: ActivityContactExpense[];
+    contactPayments?: ActivityContactPayment[];
+    upcomingContactPayments?: ActivityContactPayment[];
+    simplifyEvents?: ActivitySimplifyDebtsEvent[];
+  },
+  now: Date = new Date()
+): { upcoming: ActivityFeedItem[]; past: ActivityFeedItem[] } {
+  const dated: ActivityFeedItem[] = [
+    ...uniqueById(sources.expenses, sources.upcomingExpenses).map((payload) => ({
       kind: "expense" as const,
       id: payload.id,
       ts: payload.date,
       payload,
     })),
-    ...(sources.payments ?? []).map((payload) => ({
+    ...uniqueById(sources.payments, sources.upcomingPayments).map((payload) => ({
       kind: "payment" as const,
-      id: payload.id,
-      ts: payload.created_at,
-      payload,
-    })),
-    ...(sources.contactExpenses ?? []).map((payload) => ({
-      kind: "contact-expense" as const,
       id: payload.id,
       ts: payload.date,
       payload,
     })),
-    ...(sources.contactPayments ?? []).map((payload) => ({
-      kind: "contact-payment" as const,
-      id: payload.id,
-      ts: payload.created_at,
-      payload,
-    })),
-    ...(sources.simplifyEvents ?? []).map((payload) => ({
+    ...uniqueById(sources.contactExpenses, sources.upcomingContactExpenses).map(
+      (payload) => ({
+        kind: "contact-expense" as const,
+        id: payload.id,
+        ts: payload.date,
+        payload,
+      })
+    ),
+    ...uniqueById(sources.contactPayments, sources.upcomingContactPayments).map(
+      (payload) => ({
+        kind: "contact-payment" as const,
+        id: payload.id,
+        ts: payload.date,
+        payload,
+      })
+    ),
+  ];
+  const events: ActivityFeedItem[] = (sources.simplifyEvents ?? []).map(
+    (payload) => ({
       kind: "simplify-debts" as const,
       id: payload.id,
       ts: payload.created_at,
       payload,
-    })),
-  ]);
+    })
+  );
+
+  const { upcoming, past } = partitionUpcoming(dated, (item) => item.ts, now);
+  return { upcoming, past: sortByTimestampDesc([...past, ...events]) };
 }

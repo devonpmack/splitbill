@@ -3,6 +3,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Card, IconButton, Text } from "react-native-paper";
 import { formatCurrency } from "@/lib/utils";
 import { useAppTheme } from "@/lib/theme";
+import { UpcomingTag } from "@/components/UpcomingTag";
 import type { ContactPaymentWithProfiles, PaymentWithProfiles } from "@/lib/types";
 
 type PaymentCardProps = {
@@ -10,6 +11,7 @@ type PaymentCardProps = {
   currentUserId?: string;
   onDelete?: (paymentId: string) => void;
   onEdit?: (paymentId: string) => void;
+  upcoming?: boolean;
 };
 
 export function PaymentCard({
@@ -17,6 +19,7 @@ export function PaymentCard({
   currentUserId,
   onDelete,
   onEdit,
+  upcoming,
 }: PaymentCardProps) {
   const theme = useAppTheme();
   const isPayer = payment.paid_by === currentUserId;
@@ -28,7 +31,7 @@ export function PaymentCard({
       ? "you"
       : (payment.payee?.full_name ?? "someone");
 
-  const date = new Date(payment.created_at);
+  const date = new Date(payment.date);
   const monthDay = date.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
@@ -84,6 +87,11 @@ export function PaymentCard({
                 {payerName} paid {payeeName}{" "}
                 {formatCurrency(payment.amount, payment.currency)}
               </Text>
+              {upcoming ? (
+                <View style={{ marginTop: 4 }}>
+                  <UpcomingTag />
+                </View>
+              ) : null}
             </View>
           </View>
           {onEdit && (

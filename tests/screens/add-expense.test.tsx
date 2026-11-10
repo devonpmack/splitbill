@@ -1,5 +1,6 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react-native";
-import { renderWithPaper } from "../helpers/testUtils";
+import { freezeNow, renderWithPaper, typeDate } from "../helpers/testUtils";
+import { startOfLocalDayISO, startOfLocalDayInstant } from "@/lib/dates";
 import AddExpense from "@/app/group-add-expense";
 
 const mockBack = jest.fn();
@@ -19,6 +20,19 @@ jest.mock("@/lib/queries/useExpenses", () => ({
   useCreateExpense: jest.fn(),
   useExpenses: jest.fn(),
   useUpdateExpense: jest.fn(),
+}));
+jest.mock("@/lib/queries/useRecurringSchedules", () => ({
+  useCreateRecurringSchedule: () => ({ mutateAsync: jest.fn(), isPending: false }),
+  useScheduleFrequencies: () => ({
+    data: {
+      s1: {
+        frequency: "monthly",
+        tz: "Pacific/Auckland",
+        stopped: false,
+        stopReason: null,
+      },
+    },
+  }),
 }));
 jest.mock("@/lib/snackbar", () => ({ useSnackbar: jest.fn() }));
 
@@ -230,6 +244,85 @@ describe("AddExpense screen", () => {
     expect(mockMutateAsync).not.toHaveBeenCalled();
   });
 
+  describe("date", () => {
+    beforeEach(() => freezeNow(new Date(2026, 10, 9, 15, 0)));
+    afterEach(() => jest.useRealTimers());
+
+    it("defaults to today and sends no date, so the server uses now", async () => {
+      await renderWithPaper(<AddExpense />);
+      await fillBasics();
+
+      expect(screen.getByTestId("date-field")).toHaveProp("value", "11/09/2026");
+      expect(screen.queryByText(/Counts toward balances/)).toBeNull();
+      await fireEvent.press(screen.getByText("Add Expense"));
+
+      await waitFor(() => expect(mockMutateAsync).toHaveBeenCalledTimes(1));
+      expect(mockMutateAsync.mock.calls[0][0].date).toBeUndefined();
+    });
+
+    it("sends the start of a picked future day and says when it counts", async () => {
+      await renderWithPaper(<AddExpense />);
+      await fillBasics();
+
+      await fireEvent.changeText(screen.getByTestId("date-field"), "11/12/2026");
+      expect(
+        screen.getByText("Counts toward balances from Nov 12, 2026.")
+      ).toBeTruthy();
+      await fireEvent.press(screen.getByText("Add Expense"));
+
+      await waitFor(() =>
+        expect(mockMutateAsync).toHaveBeenCalledWith(
+          expect.objectContaining({
+            date: startOfLocalDayISO(new Date(2026, 10, 12)),
+          })
+        )
+      );
+    });
+
+    it.each(["02/30/2026", "13/45/2026", "01/01/0026"])(
+      "refuses to submit the impossible date %s",
+      async (text) => {
+        await renderWithPaper(<AddExpense />);
+        await fillBasics();
+
+        await typeDate(screen.getByTestId("date-field"), text);
+        await fireEvent.press(screen.getByText("Add Expense"));
+
+        expect(mockShowError).toHaveBeenCalledWith("Please enter a valid date");
+        expect(mockMutateAsync).not.toHaveBeenCalled();
+      }
+    );
+
+    it("submits a real leap day", async () => {
+      await renderWithPaper(<AddExpense />);
+      await fillBasics();
+
+      await typeDate(screen.getByTestId("date-field"), "02/29/2028");
+      await fireEvent.press(screen.getByText("Add Expense"));
+
+      await waitFor(() =>
+        expect(mockMutateAsync).toHaveBeenCalledWith(
+          expect.objectContaining({
+            date: startOfLocalDayISO(new Date(2028, 1, 29)),
+          })
+        )
+      );
+    });
+
+    it("refuses to submit an incomplete date", async () => {
+      await renderWithPaper(<AddExpense />);
+      await fillBasics();
+
+      await fireEvent(screen.getByTestId("date-field"), "change", {
+        nativeEvent: { text: "11/1" },
+      });
+      await fireEvent.press(screen.getByText("Add Expense"));
+
+      expect(mockShowError).toHaveBeenCalledWith("Please enter a valid date");
+      expect(mockMutateAsync).not.toHaveBeenCalled();
+    });
+  });
+
   describe("edit mode", () => {
     beforeEach(() => {
       mockParams.expenseId = "exp-1";
@@ -273,6 +366,167 @@ describe("AddExpense screen", () => {
       );
       expect(mockMutateAsync).not.toHaveBeenCalled();
       await waitFor(() => expect(mockBack).toHaveBeenCalled());
+    });
+
+    describe("date", () => {
+      beforeEach(() => freezeNow(new Date(2026, 10, 9, 15, 0)));
+      afterEach(() => jest.useRealTimers());
+
+      beforeEach(() => {
+        (useExpenses as jest.Mock).mockReturnValue({
+          data: [
+            {
+              id: "exp-1",
+              description: "Old dinner",
+              amount: 30,
+              paid_by: "u1",
+              split_type: "equal",
+              date: new Date(2026, 10, 5, 15).toISOString(),
+              expense_splits: [
+                { user_id: "u1", amount: 15 },
+                { user_id: "u2", amount: 15 },
+              ],
+            },
+          ],
+        });
+      });
+
+      it("prefills the stored day and sends no date when it is unchanged", async () => {
+        await renderWithPaper(<AddExpense />);
+
+        expect(screen.getByTestId("date-field")).toHaveProp(
+          "value",
+          "11/05/2026"
+        );
+        await fireEvent.press(screen.getByText("Save Changes"));
+
+        await waitFor(() =>
+          expect(mockUpdateMutateAsync).toHaveBeenCalledTimes(1)
+        );
+        expect(mockUpdateMutateAsync.mock.calls[0][0].date).toBeUndefined();
+      });
+
+      it("prefills a scheduled row with its schedule's day, not the instant in this zone", async () => {
+        (useExpenses as jest.Mock).mockReturnValue({
+          data: [
+            {
+              id: "exp-1",
+              description: "Rent",
+              amount: 30,
+              paid_by: "u1",
+              split_type: "equal",
+              schedule_id: "s1",
+              occurrence_date: "2026-11-05",
+              date: new Date(2026, 10, 2, 15).toISOString(),
+              expense_splits: [
+                { user_id: "u1", amount: 15 },
+                { user_id: "u2", amount: 15 },
+              ],
+            },
+          ],
+        });
+        await renderWithPaper(<AddExpense />);
+
+        expect(screen.getByTestId("date-field")).toHaveProp(
+          "value",
+          "11/05/2026"
+        );
+        await fireEvent.press(screen.getByText("Save Changes"));
+
+        await waitFor(() =>
+          expect(mockUpdateMutateAsync).toHaveBeenCalledTimes(1)
+        );
+        expect(mockUpdateMutateAsync.mock.calls[0][0].date).toBeUndefined();
+      });
+
+      it("prefills an edited but unmoved scheduled row with its schedule's day", async () => {
+        (useExpenses as jest.Mock).mockReturnValue({
+          data: [
+            {
+              id: "exp-1",
+              description: "Rent",
+              amount: 30,
+              paid_by: "u1",
+              split_type: "equal",
+              schedule_id: "s1",
+              occurrence_date: "2026-11-05",
+              hand_edited: true,
+              // The first instant of Nov 5 in the schedule's zone (Auckland).
+              date: new Date(
+                startOfLocalDayInstant("2026-11-05", "Pacific/Auckland")
+              ).toISOString(),
+              expense_splits: [
+                { user_id: "u1", amount: 15 },
+                { user_id: "u2", amount: 15 },
+              ],
+            },
+          ],
+        });
+        await renderWithPaper(<AddExpense />);
+
+        expect(screen.getByTestId("date-field")).toHaveProp(
+          "value",
+          "11/05/2026"
+        );
+        await fireEvent.press(screen.getByText("Save Changes"));
+
+        await waitFor(() =>
+          expect(mockUpdateMutateAsync).toHaveBeenCalledTimes(1)
+        );
+        expect(mockUpdateMutateAsync.mock.calls[0][0].date).toBeUndefined();
+      });
+
+      it("prefills a hand-moved scheduled row with the day it was moved to", async () => {
+        (useExpenses as jest.Mock).mockReturnValue({
+          data: [
+            {
+              id: "exp-1",
+              description: "Rent",
+              amount: 30,
+              paid_by: "u1",
+              split_type: "equal",
+              schedule_id: "s1",
+              occurrence_date: "2026-11-05",
+              hand_edited: true,
+              date: new Date(2026, 10, 20, 15).toISOString(),
+              expense_splits: [
+                { user_id: "u1", amount: 15 },
+                { user_id: "u2", amount: 15 },
+              ],
+            },
+          ],
+        });
+        await renderWithPaper(<AddExpense />);
+
+        expect(screen.getByTestId("date-field")).toHaveProp(
+          "value",
+          "11/20/2026"
+        );
+        await fireEvent.press(screen.getByText("Save Changes"));
+
+        await waitFor(() =>
+          expect(mockUpdateMutateAsync).toHaveBeenCalledTimes(1)
+        );
+        expect(mockUpdateMutateAsync.mock.calls[0][0].date).toBeUndefined();
+      });
+
+      it("sends the start of a newly picked day", async () => {
+        await renderWithPaper(<AddExpense />);
+
+        await fireEvent.changeText(
+          screen.getByTestId("date-field"),
+          "11/12/2026"
+        );
+        await fireEvent.press(screen.getByText("Save Changes"));
+
+        await waitFor(() =>
+          expect(mockUpdateMutateAsync).toHaveBeenCalledWith(
+            expect.objectContaining({
+              date: startOfLocalDayISO(new Date(2026, 10, 12)),
+            })
+          )
+        );
+      });
     });
 
     it("keeps the rate the expense was booked at instead of today's rate", async () => {

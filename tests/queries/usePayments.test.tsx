@@ -1,17 +1,28 @@
 import { renderHook, waitFor } from "@testing-library/react-native";
-import { QueryClient } from "@tanstack/react-query";
-import { actAsync, createWrapper, queryBuilder } from "../helpers/testUtils";
+
+import {
+  actAsync,
+  createWrapper,
+  freezeNow,
+  queryBuilder,
+} from "../helpers/testUtils";
+import React from "react";
+import { UPCOMING_OVERLAP_MS } from "@/lib/upcoming";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import {
   useCreatePayment,
   useDeletePayment,
   useGroupPayments,
+  useRecentPayments,
+  useUpcomingPayments,
   useUpdatePayment,
 } from "@/lib/queries/usePayments";
 
 jest.mock("@/lib/supabase", () => ({
   supabase: { from: jest.fn(), rpc: jest.fn() },
 }));
+jest.mock("@/lib/auth", () => ({ useAuth: () => ({ user: { id: "u1" } }) }));
 
 const mockedSupabase = supabase as unknown as {
   from: jest.Mock;
@@ -20,6 +31,24 @@ const mockedSupabase = supabase as unknown as {
 
 beforeEach(() => {
   jest.clearAllMocks();
+});
+
+describe("useRecentPayments", () => {
+  it("selects each payment's date and orders the feed by it, newest first", async () => {
+    const builder = queryBuilder({ data: [], error: null });
+    mockedSupabase.from.mockReturnValue(builder);
+
+    const { result } = await renderHook(() => useRecentPayments(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(builder.select).toHaveBeenCalledWith(
+      expect.stringMatching(/^\s*id,[\s\S]*\bdate,/)
+    );
+    expect(builder.order).toHaveBeenCalledWith("date", { ascending: false });
+    expect(builder.order).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("useGroupPayments", () => {
@@ -42,7 +71,7 @@ describe("useGroupPayments", () => {
       expect.stringContaining("payee:profiles!payments_paid_to_fkey")
     );
     expect(builder.eq).toHaveBeenCalledWith("group_id", "g1");
-    expect(builder.order).toHaveBeenCalledWith("created_at", {
+    expect(builder.order).toHaveBeenCalledWith("date", {
       ascending: false,
     });
     expect(result.current.data).toEqual(payments);
@@ -74,7 +103,7 @@ describe("useGroupPayments", () => {
 });
 
 describe("useCreatePayment", () => {
-  it("records a payment through the RPC with a null note default", async () => {
+  it("records a payment through the RPC with null note and date defaults", async () => {
     mockedSupabase.rpc.mockResolvedValue({ data: { id: "p1" }, error: null });
 
     const { result } = await renderHook(() => useCreatePayment(), {
@@ -100,8 +129,32 @@ describe("useCreatePayment", () => {
       p_amount: 5,
       p_note: null,
       p_currency: null,
+      p_date: null,
     });
     expect(mockedSupabase.from).not.toHaveBeenCalled();
+  });
+
+  it("sends the picked date when one is given", async () => {
+    mockedSupabase.rpc.mockResolvedValue({ data: { id: "p1" }, error: null });
+
+    const { result } = await renderHook(() => useCreatePayment(), {
+      wrapper: createWrapper(),
+    });
+
+    await actAsync(() =>
+      result.current.mutateAsync({
+        groupId: "g1",
+        paidBy: "u1",
+        paidTo: "u2",
+        amount: 5,
+        date: "2026-11-12T00:00:00-05:00",
+      })
+    );
+
+    expect(mockedSupabase.rpc).toHaveBeenCalledWith(
+      "create_payment",
+      expect.objectContaining({ p_date: "2026-11-12T00:00:00-05:00" })
+    );
   });
 
   it("propagates RPC errors", async () => {
@@ -154,8 +207,33 @@ describe("useUpdatePayment", () => {
       p_paid_to: "u1",
       p_amount: 7,
       p_note: "venmo",
+      p_date: null,
     });
     expect(mockedSupabase.from).not.toHaveBeenCalled();
+  });
+
+  it("sends the picked date when one is given", async () => {
+    mockedSupabase.rpc.mockResolvedValue({ data: { id: "p1" }, error: null });
+
+    const { result } = await renderHook(() => useUpdatePayment(), {
+      wrapper: createWrapper(),
+    });
+
+    await actAsync(() =>
+      result.current.mutateAsync({
+        paymentId: "p1",
+        groupId: "g1",
+        paidBy: "u2",
+        paidTo: "u1",
+        amount: 7,
+        date: "2026-11-12T00:00:00-05:00",
+      })
+    );
+
+    expect(mockedSupabase.rpc).toHaveBeenCalledWith(
+      "update_payment",
+      expect.objectContaining({ p_date: "2026-11-12T00:00:00-05:00" })
+    );
   });
 
   it("propagates RPC errors", async () => {
@@ -245,5 +323,103 @@ describe("useDeletePayment", () => {
         result.current.mutateAsync({ paymentId: "p1", groupId: "g1" })
       )
     ).rejects.toThrow("You are not a member of this group");
+  });
+});
+
+describe("useRecentPayments and useUpcomingPayments split the feed at now", () => {
+  const NOW = new Date("2026-11-09T12:00:00.000Z");
+
+  beforeEach(() => freezeNow(NOW));
+  afterEach(() => jest.useRealTimers());
+
+  it("useRecentPayments reads only rows dated at or before now", async () => {
+    const builder = queryBuilder({ data: [], error: null });
+    mockedSupabase.from.mockReturnValue(builder);
+
+    const { result } = await renderHook(() => useRecentPayments(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockedSupabase.from).toHaveBeenCalledWith("payments");
+    expect(builder.lte).toHaveBeenCalledWith("date", NOW.toISOString());
+    expect(builder.gt).not.toHaveBeenCalled();
+    expect(builder.order).toHaveBeenCalledWith("date", { ascending: false });
+  });
+
+  it("a row dated between the two reads' own clock readings is in at least one of them", async () => {
+    const recentBuilder = queryBuilder({ data: [], error: null });
+    const upcomingBuilder = queryBuilder({ data: [], error: null });
+
+    mockedSupabase.from.mockReturnValue(recentBuilder);
+    const recent = await renderHook(() => useRecentPayments(), { wrapper: createWrapper() });
+    await waitFor(() => expect(recent.result.current.isSuccess).toBe(true));
+
+    // The upcoming read runs 30 s after the recent one.
+    jest.setSystemTime(NOW.getTime() + 30_000);
+    mockedSupabase.from.mockReturnValue(upcomingBuilder);
+    const upcoming = await renderHook(() => useUpcomingPayments(), { wrapper: createWrapper() });
+    await waitFor(() => expect(upcoming.result.current.isSuccess).toBe(true));
+
+    const recentUpTo = new Date(recentBuilder.lte.mock.calls[0][1]).getTime();
+    const upcomingAfter = new Date(upcomingBuilder.gt.mock.calls[0][1]).getTime();
+    expect(upcomingAfter).toBeLessThan(recentUpTo);
+  });
+
+  it("useUpcomingPayments reads only rows dated after now, soonest first", async () => {
+    const rows = [{ id: "r1" }];
+    const builder = queryBuilder({ data: rows, error: null });
+    mockedSupabase.from.mockReturnValue(builder);
+
+    const { result } = await renderHook(() => useUpcomingPayments(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual(rows);
+    expect(mockedSupabase.from).toHaveBeenCalledWith("payments");
+    expect(builder.select).toHaveBeenCalledWith(
+      expect.stringMatching(/^\s*id,[\s\S]*\bdate,/)
+    );
+    expect(builder.gt).toHaveBeenCalledWith(
+      "date",
+      new Date(NOW.getTime() - UPCOMING_OVERLAP_MS).toISOString()
+    );
+    expect(builder.lte).not.toHaveBeenCalled();
+    expect(builder.order).toHaveBeenCalledWith("date", { ascending: true });
+    expect(builder.limit).toHaveBeenCalledWith(50);
+  });
+
+  it("useUpcomingPayments surfaces query errors", async () => {
+    mockedSupabase.from.mockReturnValue(
+      queryBuilder({ data: null, error: new Error("boom") })
+    );
+
+    const { result } = await renderHook(() => useUpcomingPayments(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+
+  it("useUpcomingPayments is refetched by the ['activity-payments'] invalidation every write issues", async () => {
+    const builder = queryBuilder({ data: [], error: null });
+    mockedSupabase.from.mockReturnValue(builder);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+
+    const { result } = await renderHook(() => useUpcomingPayments(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockedSupabase.from).toHaveBeenCalledTimes(1);
+
+    await actAsync(async () => {
+      await queryClient.invalidateQueries({ queryKey: ["activity-payments"] });
+    });
+
+    expect(mockedSupabase.from).toHaveBeenCalledTimes(2);
   });
 });

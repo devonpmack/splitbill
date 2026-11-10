@@ -2,6 +2,7 @@ import { useState } from "react";
 import { router, Stack } from "expo-router";
 import { Button, TextInput } from "react-native-paper";
 import { useAuth } from "@/lib/auth";
+import { useDayPick } from "@/lib/useDayPick";
 import { useHydrateOnce } from "@/lib/useHydrateOnce";
 import {
   computeSplits,
@@ -9,14 +10,37 @@ import {
   roundToCurrency,
 } from "@/lib/utils";
 import { resolveEntryRate } from "@/lib/currency";
+import {
+  buildRepeat,
+  lastOccurrenceDate,
+  occurrenceDate,
+  parseRepeatCount,
+  type RepeatEnds,
+  type RepeatSubmission,
+} from "@/lib/recurrence";
+import {
+  deviceTimeZone,
+  formatCalendarDay,
+  isMovedOccurrence,
+  parseCalendarDate,
+  startOfLocalDayISO,
+  toLocalDateString,
+} from "@/lib/dates";
 import { useExchangeRates } from "@/lib/exchange-rates";
+import { useScheduleFrequencies } from "@/lib/queries/useRecurringSchedules";
 import { useSnackbar } from "@/lib/snackbar";
+import { DateField } from "@/components/DateField";
 import { FormScreen } from "@/components/FormScreen";
+import { RepeatFields } from "@/components/RepeatFields";
 import { ExpenseAmountCurrencyInput } from "@/components/groups/ExpenseAmountCurrencyInput";
 import { PaidByPicker } from "@/components/groups/PaidByPicker";
 import { SplitMembersSection } from "@/components/groups/SplitMembersSection";
 import { SplitTypeSelector } from "@/components/groups/SplitTypeSelector";
-import type { MemberWithProfile, SplitType } from "@/lib/types";
+import type {
+  MemberWithProfile,
+  RecurringFrequency,
+  SplitType,
+} from "@/lib/types";
 
 // The expense being edited, as far as this form needs it.
 export type EditableExpense = {
@@ -26,6 +50,10 @@ export type EditableExpense = {
   split_type: SplitType;
   currency: string;
   exchange_rate: number;
+  date?: string;
+  schedule_id?: string | null;
+  occurrence_date?: string | null;
+  hand_edited?: boolean;
   expense_splits?: { user_id: string; amount: number }[] | null;
 };
 
@@ -37,7 +65,31 @@ export type ExpenseFormSubmission = {
   splits: { userId: string; amount: number }[];
   currency: string;
   exchangeRate: number;
+  date?: string;
+  // Present when a new expense repeats; `date` is then absent, the start day
+  // is in here.
+  repeat?: RepeatSubmission;
 };
+
+// A scheduled row is dated by its schedule's calendar day, whichever zone it is
+// edited from, unless a member moved it.
+function storedDate(
+  expense: EditableExpense | undefined,
+  scheduleTz: string | undefined
+): string | undefined {
+  if (
+    !expense?.occurrence_date ||
+    isMovedOccurrence(
+      expense.date ?? "",
+      expense.occurrence_date,
+      expense.hand_edited,
+      scheduleTz
+    )
+  ) {
+    return expense?.date;
+  }
+  return startOfLocalDayISO(parseCalendarDate(expense.occurrence_date));
+}
 
 type ExpenseFormScreenProps = {
   members: MemberWithProfile[];
@@ -76,6 +128,33 @@ export function ExpenseFormScreen({
   const [excludedMemberIds, setExcludedMemberIds] = useState<string[]>([]);
   const [currency, setCurrency] = useState<string | null>(null);
 
+  const [frequency, setFrequency] = useState<RecurringFrequency | null>(null);
+  const [ends, setEnds] = useState<RepeatEnds>("never");
+  const [pickedEndDay, setPickedEndDay] = useState<Date | null | undefined>(
+    undefined
+  );
+  const [repeatCount, setRepeatCount] = useState("12");
+
+  const { data: schedules } = useScheduleFrequencies();
+  const scheduleTz = existingExpense?.schedule_id
+    ? schedules?.[existingExpense.schedule_id]?.tz
+    : undefined;
+  const day = useDayPick(
+    isEdit ? storedDate(existingExpense, scheduleTz) : undefined
+  );
+  const repeating = !isEdit && frequency !== null;
+  const startDay = day.value ?? new Date();
+  const startDate = toLocalDateString(startDay);
+  // Until the user picks an end day, the end is one step after the start.
+  const endDay =
+    pickedEndDay === undefined
+      ? parseCalendarDate(occurrenceDate(startDate, frequency ?? "daily", 1))
+      : pickedEndDay;
+  const repeatCountValue = parseRepeatCount(repeatCount);
+  const lastOccurrence =
+    frequency && ends === "count" && repeatCountValue
+      ? lastOccurrenceDate(startDate, frequency, repeatCountValue)
+      : null;
   const entryCurrency = currency ?? baseCurrency;
 
   useHydrateOnce(isEdit && !!existingExpense && members.length > 0, () => {
@@ -148,6 +227,10 @@ export function ExpenseFormScreen({
       showError("Please select who paid");
       return;
     }
+    if (day.isInvalid) {
+      showError("Please enter a valid date");
+      return;
+    }
     if (isForeignCurrency && !hasExchangeRate) {
       showError(
         "Exchange rates aren't available for this currency pair. Try again when rates are cached."
@@ -167,6 +250,22 @@ export function ExpenseFormScreen({
       return;
     }
 
+    const repeat =
+      repeating && frequency
+        ? buildRepeat({
+            frequency,
+            startDay,
+            ends,
+            endDay,
+            count: repeatCount,
+            timeZone: deviceTimeZone(),
+          })
+        : undefined;
+    if (repeat && !repeat.ok) {
+      showError(repeat.error);
+      return;
+    }
+
     try {
       await onSubmit({
         paidBy: effectivePaidBy,
@@ -176,6 +275,9 @@ export function ExpenseFormScreen({
         splits: result.splits,
         currency: entryCurrency,
         exchangeRate,
+        ...(repeat?.ok
+          ? { repeat: repeat.repeat }
+          : { date: day.dateParam }),
       });
       router.back();
     } catch (error) {
@@ -219,6 +321,32 @@ export function ExpenseFormScreen({
         hasExchangeRate={hasExchangeRate}
         baseCurrencyLabel={baseCurrencyLabel}
       />
+
+      <DateField
+        value={day.value}
+        onChange={day.onChange}
+        label={repeating ? "Starts" : "Date"}
+      />
+
+      {isEdit ? null : (
+        <RepeatFields
+          frequency={frequency}
+          onFrequencyChange={setFrequency}
+          ends={ends}
+          onEndsChange={setEnds}
+          endDay={endDay}
+          onEndDayChange={setPickedEndDay}
+          count={repeatCount}
+          onCountChange={setRepeatCount}
+          isForeignCurrency={entryCurrency !== baseCurrency}
+          countIsValid={repeatCountValue !== null}
+          lastOccurrenceLabel={
+            lastOccurrence
+              ? `The last one is on ${formatCalendarDay(lastOccurrence)}.`
+              : undefined
+          }
+        />
+      )}
 
       <PaidByPicker
         members={members}

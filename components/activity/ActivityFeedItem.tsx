@@ -18,22 +18,37 @@ import { useAppTheme } from "@/lib/theme";
 type ActivityFeedItemCardProps = {
   item: ActivityFeedItem;
   currentUserId?: string;
+  upcoming?: boolean;
 };
 
 export function ActivityFeedItemCard({
   item,
   currentUserId,
+  upcoming,
 }: ActivityFeedItemCardProps) {
   switch (item.kind) {
     case "expense":
-      return <ExpenseRow item={item.payload} currentUserId={currentUserId} />;
+      return (
+        <ExpenseRow
+          item={item.payload}
+          currentUserId={currentUserId}
+          upcoming={upcoming}
+        />
+      );
     case "payment":
-      return <PaymentRow item={item.payload} currentUserId={currentUserId} />;
+      return (
+        <PaymentRow
+          item={item.payload}
+          currentUserId={currentUserId}
+          upcoming={upcoming}
+        />
+      );
     case "contact-expense":
       return (
         <ContactExpenseRow
           item={item.payload}
           currentUserId={currentUserId}
+          upcoming={upcoming}
         />
       );
     case "contact-payment":
@@ -41,6 +56,7 @@ export function ActivityFeedItemCard({
         <ContactPaymentRow
           item={item.payload}
           currentUserId={currentUserId}
+          upcoming={upcoming}
         />
       );
     case "simplify-debts":
@@ -122,9 +138,11 @@ function payerLabel(
 function ExpenseRow({
   item,
   currentUserId,
+  upcoming,
 }: {
   item: ActivityExpense;
   currentUserId?: string;
+  upcoming?: boolean;
 }) {
   const theme = useAppTheme();
   const summary = getExpenseSummary(item, currentUserId, theme);
@@ -135,6 +153,10 @@ function ExpenseRow({
       title={item.description}
       subtitle={`${payerLabel(item.paid_by, currentUserId, item.payer)} paid ${formatCurrency(item.amount, item.currency)} in ${item.groups?.name ?? "a group"}`}
       date={item.date}
+      upcoming={upcoming}
+      scheduleId={item.schedule_id}
+      occurrenceDate={item.occurrence_date}
+      handEdited={item.hand_edited}
       onPress={() => router.push(`/activity/group/${item.group_id}`)}
       trailing={expenseTrailing(summary, item.currency)}
       edit={{
@@ -152,9 +174,11 @@ function ExpenseRow({
 function ContactExpenseRow({
   item,
   currentUserId,
+  upcoming,
 }: {
   item: ActivityContactExpense;
   currentUserId?: string;
+  upcoming?: boolean;
 }) {
   const theme = useAppTheme();
   const summary = getExpenseSummary(item, currentUserId, theme);
@@ -177,6 +201,10 @@ function ContactExpenseRow({
       title={item.description}
       subtitle={`${payerLabel(item.paid_by, currentUserId, item.payer)} paid ${formatCurrency(item.amount, item.currency)} \u00b7 with ${otherName}`}
       date={item.date}
+      upcoming={upcoming}
+      scheduleId={item.schedule_id}
+      occurrenceDate={item.occurrence_date}
+      handEdited={item.hand_edited}
       onPress={() =>
         router.push({
           pathname: "/activity/contacts/[id]",
@@ -199,9 +227,11 @@ function ContactExpenseRow({
 function PaymentRow({
   item,
   currentUserId,
+  upcoming,
 }: {
   item: ActivityPayment;
   currentUserId?: string;
+  upcoming?: boolean;
 }) {
   const payeeName =
     item.paid_to === currentUserId
@@ -215,7 +245,8 @@ function PaymentRow({
       title={`${payerLabel(item.paid_by, currentUserId, item.payer)} paid ${payeeName}`}
       subtitle={`in ${item.groups?.name ?? "a group"}`}
       note={item.note}
-      date={item.created_at}
+      date={item.date}
+      upcoming={upcoming}
       onPress={() => router.push(`/activity/group/${item.group_id}`)}
       trailing={{
         kind: "amount",
@@ -236,9 +267,11 @@ function PaymentRow({
 function ContactPaymentRow({
   item,
   currentUserId,
+  upcoming,
 }: {
   item: ActivityContactPayment;
   currentUserId?: string;
+  upcoming?: boolean;
 }) {
   const payeeName =
     item.paid_to === currentUserId
@@ -254,7 +287,8 @@ function ContactPaymentRow({
       icon="cash-fast"
       title={`${payerLabel(item.paid_by, currentUserId, item.payer)} paid ${payeeName}`}
       note={item.note}
-      date={item.created_at}
+      date={item.date}
+      upcoming={upcoming}
       onPress={() =>
         router.push({
           pathname: "/activity/contacts/[id]",

@@ -1,4 +1,4 @@
-import { fireEvent, screen } from "@testing-library/react-native";
+import { act, fireEvent, screen } from "@testing-library/react-native";
 import { renderWithPaper, actAsync } from "../helpers/testUtils";
 import ContactDetail from "@/app/(tabs)/(home)/contacts/[id]";
 import ActivityContactDetail from "@/app/(tabs)/activity/contacts/[id]";
@@ -10,7 +10,10 @@ const mockShowError = jest.fn();
 const mockConfirm = jest.fn();
 // Captures whatever Stack.Screen was handed, so a test can assert the
 // header options the screen set.
-type ScreenOptions = { title?: string };
+type ScreenOptions = {
+  title?: string;
+  headerRight?: () => { props: { onPress: () => void } };
+};
 const mockScreenHolder: { options: ScreenOptions | null } = {
   options: null,
 };
@@ -52,6 +55,25 @@ jest.mock("@/lib/queries/useContactPayments", () => ({
   useDeleteContactPayment: jest.fn(),
 }));
 jest.mock("@/lib/snackbar", () => ({ useSnackbar: jest.fn() }));
+jest.mock("@/lib/queries/useRecurringSchedules", () => {
+  const summary = (stopped: boolean, stopReason: string | null) => ({
+    frequency: "monthly",
+    tz: "UTC",
+    stopped,
+    stopReason,
+  });
+  return {
+    useScheduleFrequencies: () => ({
+      data: {
+        s1: summary(false, null),
+        s8: summary(true, "stopped"),
+        s9: summary(true, "completed"),
+        s7: summary(true, "member left"),
+      },
+    }),
+  };
+});
+
 jest.mock("@/lib/confirm", () => ({ useConfirm: jest.fn() }));
 
 import { router } from "expo-router";
@@ -99,6 +121,7 @@ const paymentsFixture = [
     payee: { full_name: "Bob" },
     note: "Venmo",
     created_at: "2024-01-03",
+    date: "2024-01-03",
   },
 ];
 
@@ -266,6 +289,27 @@ describe("ContactDetail screen", () => {
     });
   });
 
+  it("places and dates a payment by its date, not when it was recorded", async () => {
+    setup({
+      expenses: [{ ...expensesFixture[0], date: new Date(2024, 0, 15, 12).toISOString() }],
+      payments: [
+        {
+          ...paymentsFixture[0],
+          created_at: new Date(2023, 11, 1, 12).toISOString(),
+          date: new Date(2024, 1, 1, 12).toISOString(),
+        },
+      ],
+    });
+    await renderWithPaper(<ContactDetail />);
+
+    const rows = screen
+      .getAllByText(/^(You paid Bob \$20\.00|Dinner)$/)
+      .map((node) => [node.props.children].flat().join(""));
+    expect(rows).toEqual(["You paid Bob $20.00", "Dinner"]);
+    expect(screen.getByText("Feb 1")).toBeTruthy();
+    expect(screen.queryByText("Dec 1")).toBeNull();
+  });
+
   it("confirms and deletes a one-on-one payment on confirm", async () => {
     setup({ payments: paymentsFixture });
     await renderWithPaper(<ContactDetail />);
@@ -305,6 +349,104 @@ describe("ContactDetail screen", () => {
       { expenseId: "ce-1", contactUserId: "user-2" },
       expect.objectContaining({ onError: expect.any(Function) })
     );
+  });
+
+  it("says deleting a repeat's occurrence only removes that one", async () => {
+    setup({
+      expenses: [
+        {
+          ...expensesFixture[0],
+          schedule_id: "s1",
+          occurrence_date: "2024-01-01",
+        },
+      ],
+    });
+    await renderWithPaper(<ContactDetail />);
+
+    await fireEvent(screen.getByText("Dinner"), "longPress");
+
+    const confirmArg = mockConfirm.mock.calls[0][0];
+    expect(confirmArg.title).toBe("Delete Expense");
+    expect(confirmArg.message).toContain(
+      "This only removes this one occurrence; the series continues. To stop the series, use Repeating."
+    );
+  });
+
+  describe("delete confirm on rows of a schedule that has stopped", () => {
+    const NOTE = /the series continues/;
+    const open = async (scheduleId: string, date: string) => {
+      setup({
+        expenses: [
+          {
+            ...expensesFixture[0],
+            schedule_id: scheduleId,
+            occurrence_date: "2024-01-01",
+            hand_edited: true,
+            date,
+          },
+        ],
+      });
+      await renderWithPaper(<ContactDetail />);
+      await fireEvent(screen.getByText("Dinner"), "longPress");
+      return mockConfirm.mock.calls[0][0].message as string;
+    };
+
+    it.each(["s8", "s7"])(
+      "an upcoming leftover of stopped schedule %s gets the plain confirm",
+      async (id) => {
+        expect(await open(id, "2099-01-01T00:00:00Z")).not.toMatch(NOTE);
+      }
+    );
+
+    it.each(["s8", "s7"])(
+      "a past row of stopped schedule %s still says the series continues",
+      async (id) => {
+        expect(await open(id, "2024-01-01T00:00:00Z")).toMatch(NOTE);
+      }
+    );
+
+    it("an upcoming row of a completed schedule still says the series continues", async () => {
+      expect(await open("s9", "2099-01-01T00:00:00Z")).toMatch(NOTE);
+    });
+  });
+
+  it("does not mention a series when deleting an ordinary expense", async () => {
+    await renderWithPaper(<ContactDetail />);
+
+    await fireEvent(screen.getByText("Dinner"), "longPress");
+
+    expect(mockConfirm.mock.calls[0][0].message).not.toMatch(
+      /occurrence|series/
+    );
+  });
+
+  it("opens the contact's Repeating list from the header", async () => {
+    await renderWithPaper(<ContactDetail />);
+
+    await actAsync(async () => {
+      screenOptions().headerRight?.().props.onPress();
+    });
+
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/repeating",
+      params: { contactUserId: "user-2" },
+    });
+  });
+
+  it("offers no Repeating list for a group-mate who is not a contact", async () => {
+    (useContacts as jest.Mock).mockReturnValue({
+      data: [
+        {
+          contact_user_id: "user-2",
+          full_name: "Bob",
+          balance: 15,
+          is_accepted: false,
+        },
+      ],
+    });
+    await renderWithPaper(<ContactDetail />);
+
+    expect(screenOptions().headerRight).toBeUndefined();
   });
 
   it("hides 1-on-1 actions and currency editing for a non-contact group-mate", async () => {
@@ -353,3 +495,172 @@ describe("ContactDetail hosted in the Activity tab", () => {
   });
 });
 
+
+describe("ContactDetail upcoming transactions", () => {
+  const NOW = new Date("2026-11-09T12:00:00.000Z");
+  const futureExpense = {
+    ...expensesFixture[0],
+    id: "ce-future",
+    description: "Rent",
+    date: "2026-12-01T00:00:00.000Z",
+  };
+  const futurePayment = {
+    ...paymentsFixture[0],
+    id: "cp-future",
+    note: "Scheduled",
+    date: "2026-11-20T00:00:00.000Z",
+  };
+
+  beforeEach(() => {
+    jest.useFakeTimers({ now: NOW });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it("lists future-dated expenses and payments under Upcoming, soonest first, each tagged", async () => {
+    setup({
+      expenses: [futureExpense, ...expensesFixture],
+      payments: [futurePayment],
+    });
+    await renderWithPaper(<ContactDetail />);
+
+    expect(screen.getAllByText("Upcoming")).toHaveLength(3);
+    const order = screen
+      .getAllByText(/^(Rent|You paid Bob \$20\.00|Dinner)$/)
+      .map((node) => [node.props.children].flat().join(""));
+    expect(order).toEqual(["You paid Bob $20.00", "Rent", "Dinner"]);
+  });
+
+  it("keeps a future row out of the past list and does not show the empty state", async () => {
+    setup({ expenses: [futureExpense], payments: [] });
+    await renderWithPaper(<ContactDetail />);
+
+    expect(screen.getByText("Rent")).toBeTruthy();
+    expect(screen.queryByText("History")).toBeNull();
+    expect(screen.queryByText("No activity yet")).toBeNull();
+  });
+
+  it("shows no Upcoming section when nothing is future-dated", async () => {
+    await renderWithPaper(<ContactDetail />);
+
+    expect(screen.queryByText("Upcoming")).toBeNull();
+    expect(screen.queryByText("History")).toBeNull();
+  });
+
+  it("treats a row dated exactly now as already counting", async () => {
+    setup({
+      expenses: [],
+      payments: [{ ...futurePayment, date: NOW.toISOString() }],
+    });
+    await renderWithPaper(<ContactDetail />);
+
+    expect(screen.getByText("You paid Bob $20.00")).toBeTruthy();
+    expect(screen.queryByText("Upcoming")).toBeNull();
+  });
+
+  it("opens an upcoming payment for editing and an upcoming expense for cancelling", async () => {
+    setup({ expenses: [futureExpense], payments: [futurePayment] });
+    await renderWithPaper(<ContactDetail />);
+
+    await fireEvent.press(screen.getByText("You paid Bob $20.00"));
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/contacts/settle-up",
+      params: { contactUserId: "user-2", paymentId: "cp-future" },
+    });
+
+    await fireEvent(screen.getByText("Rent"), "longPress");
+    expect(mockConfirm.mock.calls[0][0].title).toBe("Delete Expense");
+  });
+
+  it("moves a row out of Upcoming and refetches the balance when its date arrives", async () => {
+    const refetchBalance = jest.fn().mockResolvedValue(undefined);
+    setup({
+      expenses: [
+        { ...futureExpense, date: new Date(NOW.getTime() + 10_000).toISOString() },
+      ],
+      payments: [],
+    });
+    (useContactBalance as jest.Mock).mockReturnValue({
+      data: 15,
+      refetch: refetchBalance,
+    });
+    await renderWithPaper(<ContactDetail />);
+    expect(screen.getAllByText("Upcoming")).toHaveLength(2);
+
+    await act(async () => {
+      jest.advanceTimersByTime(12_000);
+    });
+
+    expect(screen.queryByText("Upcoming")).toBeNull();
+    expect(screen.getByText("Rent")).toBeTruthy();
+    expect(refetchBalance).toHaveBeenCalled();
+  });
+
+  it.each([
+    ["expense", "Fresh dinner"],
+    ["payment", "You paid Bob $20.00"],
+  ])(
+    "lists a %s created after minutes on screen as history, with no spurious refetch",
+    async (kind, label) => {
+      const refetchBalance = jest.fn().mockResolvedValue(undefined);
+      const view = await renderWithPaper(<ContactDetail />);
+
+      jest.setSystemTime(new Date(NOW.getTime() + 10 * 60_000));
+      const created = new Date(Date.now() - 2_000).toISOString();
+      setup(
+        kind === "expense"
+          ? {
+              expenses: [
+                { ...futureExpense, id: "fresh", description: "Fresh dinner", date: created },
+              ],
+              payments: [],
+            }
+          : { expenses: [], payments: [{ ...futurePayment, id: "fresh", date: created }] }
+      );
+      (useContactBalance as jest.Mock).mockReturnValue({
+        data: 15,
+        refetch: refetchBalance,
+      });
+      await act(async () => {
+        await view.rerender(<ContactDetail />);
+      });
+
+      expect(screen.getByText(label)).toBeTruthy();
+      expect(screen.queryByText("Upcoming")).toBeNull();
+
+      await act(async () => {
+        jest.advanceTimersByTime(60_000);
+      });
+      expect(screen.queryByText("Upcoming")).toBeNull();
+      expect(refetchBalance).not.toHaveBeenCalled();
+    }
+  );
+
+  it("starts the timer from an upcoming payment's date", async () => {
+    setup({
+      expenses: [],
+      payments: [
+        { ...futurePayment, date: new Date(NOW.getTime() + 10_000).toISOString() },
+      ],
+    });
+    await renderWithPaper(<ContactDetail />);
+    expect(screen.getAllByText("Upcoming")).toHaveLength(2);
+
+    await act(async () => {
+      jest.advanceTimersByTime(12_000);
+    });
+
+    expect(screen.queryByText("Upcoming")).toBeNull();
+  });
+
+  it("keeps the pair currency locked while only future rows exist", async () => {
+    setup({ expenses: [futureExpense], payments: [] });
+    await renderWithPaper(<ContactDetail />);
+
+    expect(
+      screen.queryByText("Set the base currency for one-on-one expenses.")
+    ).toBeNull();
+  });
+});

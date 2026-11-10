@@ -16,14 +16,17 @@ import {
   getErrorMessage,
   memberDebtBreakdown,
   netDebtsByCounterparty,
-  sortByTimestampDesc,
   sortMembersSelfFirst,
 } from "@/lib/utils";
 import { useRealtimeSubscription } from "@/lib/realtime";
+import { hidesChip, withSkipNote } from "@/lib/recurrence";
+import { isUpcoming } from "@/lib/dates";
+import { useScheduleFrequencies } from "@/lib/queries/useRecurringSchedules";
 import { useSnackbar } from "@/lib/snackbar";
 import { useConfirm } from "@/lib/confirm";
 import { useAppTheme } from "@/lib/theme";
-import { ActivityList, type ActivityListItem } from "@/components/ActivityList";
+import { useNow } from "@/lib/useNow";
+import { ActivityList, splitActivityListItems } from "@/components/ActivityList";
 import { DualActionBar } from "@/components/DualActionBar";
 import { GroupBalancesList } from "@/components/groups/GroupBalancesList";
 import { GroupHeaderActions } from "@/components/groups/GroupHeaderActions";
@@ -52,6 +55,7 @@ export function GroupDetailScreen({
   const { data: simplifiedDebts, refetch: refetchSimplifiedDebts } =
     useGroupSimplifiedEdges(groupId, simplify);
   const deleteExpense = useDeleteExpense();
+  const { data: schedules } = useScheduleFrequencies();
   const deletePayment = useDeletePayment();
   const leaveGroup = useLeaveGroup();
   const { showError, showInfo } = useSnackbar();
@@ -117,9 +121,16 @@ export function GroupDetailScreen({
   ]);
 
   const handleDeleteExpense = (expenseId: string) => {
+    const row = expenses?.find((e) => e.id === expenseId);
+    const schedule = row?.schedule_id ? schedules?.[row.schedule_id] : undefined;
+    const isOccurrence =
+      !!schedule && !hidesChip(schedule, isUpcoming(row?.date ?? ""));
     confirm({
       title: "Delete Expense",
-      message: "Are you sure you want to delete this expense? This will remove it for ALL people involved.",
+      message: withSkipNote(
+        "Are you sure you want to delete this expense? This will remove it for ALL people involved.",
+        isOccurrence
+      ),
       confirmText: "Delete",
       destructive: true,
       onConfirm: () => {
@@ -162,22 +173,20 @@ export function GroupDetailScreen({
     });
   };
 
-  const activityItems: ActivityListItem[] = sortByTimestampDesc([
-    ...(expenses ?? []).map(
-      (expense): ActivityListItem => ({
-        kind: "expense",
-        ts: expense.date,
-        payload: expense,
-      })
-    ),
-    ...(payments ?? []).map(
-      (payment): ActivityListItem => ({
-        kind: "payment",
-        ts: payment.created_at,
-        payload: payment,
-      })
-    ),
-  ]);
+  // A date arriving changes what the server counts, so the timer refetches the
+  // balances too; the rows move out of Upcoming as `now` advances.
+  const now = useNow(
+    [...(expenses ?? []), ...(payments ?? [])].map((row) => row.date),
+    () => {
+      refetchExpenses();
+      refetchPayments();
+      refetchBalances();
+      refetchRawDebts();
+      refetchSimplifiedDebts();
+    }
+  );
+  const { upcoming: upcomingItems, past: activityItems } =
+    splitActivityListItems(expenses ?? [], payments ?? [], now);
 
   const debts = simplify ? (simplifiedDebts ?? []) : (rawDebts ?? []);
 
@@ -201,6 +210,12 @@ export function GroupDetailScreen({
               onSettings={() =>
                 router.push({
                   pathname: "/group-manage",
+                  params: { groupId },
+                })
+              }
+              onRepeating={() =>
+                router.push({
+                  pathname: "/repeating",
                   params: { groupId },
                 })
               }
@@ -256,6 +271,7 @@ export function GroupDetailScreen({
           {activeTab === "activity" ? (
             <ActivityList
               items={activityItems}
+              upcomingItems={upcomingItems}
               emptyState={{
                 icon: "timeline-text-outline",
                 title: "No activity yet",

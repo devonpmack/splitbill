@@ -1,5 +1,6 @@
 import { View } from "react-native";
 import { Text, TextInput } from "react-native-paper";
+import { DateField } from "@/components/DateField";
 import { getCurrencySymbol } from "@/lib/currency";
 import { useAppTheme } from "@/lib/theme";
 
@@ -8,6 +9,8 @@ type PaymentAmountNoteFieldsProps = {
   onAmountChange: (amount: string) => void;
   note: string;
   onNoteChange: (note: string) => void;
+  date: Date | null | undefined;
+  onDateChange: (date: Date | null) => void;
   currency?: string;
   amountLabel?: string;
   amountSectionLabel?: string;
@@ -18,6 +21,8 @@ export function PaymentAmountNoteFields({
   onAmountChange,
   note,
   onNoteChange,
+  date,
+  onDateChange,
   currency,
   amountLabel,
   amountSectionLabel,
@@ -56,6 +61,8 @@ export function PaymentAmountNoteFields({
           placeholder="e.g., Venmo payment"
         />
       </View>
+
+      <DateField value={date} onChange={onDateChange} />
     </>
   );
 }

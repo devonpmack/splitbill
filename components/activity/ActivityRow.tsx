@@ -2,6 +2,10 @@ import { View } from "react-native";
 import { Card, IconButton, Text } from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAppTheme } from "@/lib/theme";
+import { formatDay, rowDay } from "@/lib/dates";
+import { UpcomingTag } from "@/components/UpcomingTag";
+import { RepeatsTag } from "@/components/RepeatsTag";
+import { useScheduleFrequencies } from "@/lib/queries/useRecurringSchedules";
 import type { ComponentProps } from "react";
 
 type IconName = ComponentProps<typeof MaterialCommunityIcons>["name"];
@@ -25,6 +29,14 @@ type ActivityRowProps = {
   onPress: () => void;
   trailing?: ActivityRowTrailing;
   edit?: { label: string; onPress: () => void };
+  // Dated in the future: tagged, and the footer says when it starts counting.
+  upcoming?: boolean;
+  // An occurrence of a recurring expense: tagged, and dated by the schedule's
+  // calendar day rather than the instant in this device's zone.
+  scheduleId?: string | null;
+  occurrenceDate?: string | null;
+  // A member's edit freezes the row and may move its date off occurrenceDate.
+  handEdited?: boolean | null;
 };
 
 export function ActivityRow({
@@ -37,8 +49,19 @@ export function ActivityRow({
   onPress,
   trailing,
   edit,
+  upcoming,
+  scheduleId,
+  occurrenceDate,
+  handEdited,
 }: ActivityRowProps) {
   const theme = useAppTheme();
+  const { data: schedules } = useScheduleFrequencies();
+  const day = rowDay(
+    date,
+    occurrenceDate,
+    handEdited,
+    scheduleId ? schedules?.[scheduleId]?.tz : undefined
+  );
   const isSecondary = tone === "secondary";
   const onTone = isSecondary
     ? theme.colors.onSecondaryContainer
@@ -113,9 +136,20 @@ export function ActivityRow({
           </Text>
         ) : null}
 
-        <Text variant="labelSmall" style={{ color: onTone, marginTop: 8 }}>
-          {new Date(date).toLocaleDateString()}
-        </Text>
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 8,
+            marginTop: 8,
+          }}
+        >
+          {upcoming ? <UpcomingTag /> : null}
+          {scheduleId ? <RepeatsTag scheduleId={scheduleId} upcoming={!!upcoming} /> : null}
+          <Text variant="labelSmall" style={{ color: onTone }}>
+            {upcoming ? `Counts from ${formatDay(day)}` : formatDay(day)}
+          </Text>
+        </View>
       </Card.Content>
     </Card>
   );

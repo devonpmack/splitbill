@@ -27,11 +27,16 @@ import { useDisplayCurrency } from "@/lib/display-currency";
 import { useSnackbar } from "@/lib/snackbar";
 import { useConfirm } from "@/lib/confirm";
 import { useAppTheme } from "@/lib/theme";
-import { ActivityList, type ActivityListItem } from "@/components/ActivityList";
+import { hidesChip, withSkipNote } from "@/lib/recurrence";
+import { isUpcoming } from "@/lib/dates";
+import { useScheduleFrequencies } from "@/lib/queries/useRecurringSchedules";
+import { useNow } from "@/lib/useNow";
+import { ActivityList, splitActivityListItems } from "@/components/ActivityList";
 import { DualActionBar } from "@/components/DualActionBar";
 import { EmptyState } from "@/components/EmptyState";
 import { ContactGroupBreakdownList } from "@/components/contacts/ContactGroupBreakdownList";
 import { ContactSummaryCard } from "@/components/contacts/ContactSummaryCard";
+import { RepeatingHeaderButton } from "@/components/recurring/RepeatingHeaderButton";
 
 export type ContactDetailScreenProps = {
   contactUserId: string;
@@ -81,6 +86,7 @@ export function ContactDetailScreen({
   const { data: pairCurrency = "USD" } = useContactCurrency(contactUserId);
   const setContactCurrency = useSetContactCurrency();
   const deleteContactExpense = useDeleteContactExpense();
+  const { data: schedules } = useScheduleFrequencies();
   const deleteContactPayment = useDeleteContactPayment();
   const { showError } = useSnackbar();
 
@@ -110,29 +116,32 @@ export function ContactDetailScreen({
   const groups = groupBreakdown ?? [];
   const hasGroups = groups.length > 0;
 
-  const activityItems: ActivityListItem[] = [
-    ...(expenses ?? []).map(
-      (expense): ActivityListItem => ({
-        kind: "expense",
-        ts: expense.date,
-        payload: expense,
-      })
-    ),
-    ...(payments ?? []).map(
-      (payment): ActivityListItem => ({
-        kind: "payment",
-        ts: payment.created_at,
-        payload: payment,
-      })
-    ),
-  ].sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime());
-  const hasActivity = activityItems.length > 0;
+  // A date arriving changes what the server counts, so the timer refetches the
+  // balance too; the rows move out of Upcoming as `now` advances.
+  const now = useNow(
+    [...(expenses ?? []), ...(payments ?? [])].map((row) => row.date),
+    () => {
+      refetchBalance();
+      refetchExpenses();
+      refetchPayments();
+      refetchGroupBreakdown();
+    }
+  );
+  const { upcoming: upcomingItems, past: activityItems } =
+    splitActivityListItems(expenses ?? [], payments ?? [], now);
+  const hasActivity = activityItems.length > 0 || upcomingItems.length > 0;
 
   const handleDeleteExpense = (expenseId: string) => {
+    const row = expenses?.find((e) => e.id === expenseId);
+    const schedule = row?.schedule_id ? schedules?.[row.schedule_id] : undefined;
+    const isOccurrence =
+      !!schedule && !hidesChip(schedule, isUpcoming(row?.date ?? ""));
     confirm({
       title: "Delete Expense",
-      message:
+      message: withSkipNote(
         "Are you sure you want to delete this expense? This will remove it for both people involved.",
+        isOccurrence
+      ),
       confirmText: "Delete",
       destructive: true,
       onConfirm: () => {
@@ -182,7 +191,23 @@ export function ContactDetailScreen({
 
   return (
     <>
-      <Stack.Screen options={{ title: contactName }} />
+      <Stack.Screen
+        options={{
+          title: contactName,
+          headerRight: isAccepted
+            ? () => (
+                <RepeatingHeaderButton
+                  onPress={() =>
+                    router.push({
+                      pathname: "/repeating",
+                      params: { contactUserId },
+                    })
+                  }
+                />
+              )
+            : undefined,
+        }}
+      />
       <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
         <ScrollView
           style={{ flex: 1 }}
@@ -218,6 +243,7 @@ export function ContactDetailScreen({
 
           <ActivityList
             items={activityItems}
+            upcomingItems={upcomingItems}
             title={hasGroups ? "One-on-one" : undefined}
             currentUserId={user?.id}
             onDeleteExpense={handleDeleteExpense}

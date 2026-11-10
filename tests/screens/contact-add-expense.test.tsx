@@ -1,5 +1,6 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react-native";
-import { renderWithPaper } from "../helpers/testUtils";
+import { freezeNow, renderWithPaper } from "../helpers/testUtils";
+import { startOfLocalDayISO } from "@/lib/dates";
 import { ContactAddExpenseScreen as AddContactExpense } from "@/components/contacts/ContactAddExpenseScreen";
 
 const mockBack = jest.fn();
@@ -20,6 +21,19 @@ jest.mock("@/lib/queries/useContactExpenses", () => ({
   useContactExpenses: jest.fn(),
   useCreateContactExpense: jest.fn(),
   useUpdateContactExpense: jest.fn(),
+}));
+jest.mock("@/lib/queries/useRecurringSchedules", () => ({
+  useCreateRecurringSchedule: () => ({ mutateAsync: jest.fn(), isPending: false }),
+  useScheduleFrequencies: () => ({
+    data: {
+      s1: {
+        frequency: "monthly",
+        tz: "Pacific/Auckland",
+        stopped: false,
+        stopReason: null,
+      },
+    },
+  }),
 }));
 jest.mock("@/lib/snackbar", () => ({ useSnackbar: jest.fn() }));
 
@@ -65,6 +79,35 @@ describe("AddContactExpense screen", () => {
 
     expect(mockShowError).toHaveBeenCalledWith("Please enter a description");
     expect(mockMutateAsync).not.toHaveBeenCalled();
+  });
+
+  describe("date", () => {
+    beforeEach(() => freezeNow(new Date(2026, 10, 9, 15, 0)));
+    afterEach(() => jest.useRealTimers());
+
+    it("sends the start of a picked future day", async () => {
+      await renderWithPaper(<AddContactExpense />);
+
+      await fireEvent.changeText(
+        screen.getByPlaceholderText("What was this expense for?"),
+        "Coffee"
+      );
+      await fireEvent.changeText(screen.getByPlaceholderText("0.00"), "8");
+      await fireEvent.changeText(screen.getByTestId("date-field"), "11/12/2026");
+      expect(
+        screen.getByText("Counts toward balances from Nov 12, 2026.")
+      ).toBeTruthy();
+      await fireEvent.press(screen.getByText("Add Expense"));
+
+      await waitFor(() =>
+        expect(mockMutateAsync).toHaveBeenCalledWith(
+          expect.objectContaining({
+            contactUserId: "user-2",
+            date: startOfLocalDayISO(new Date(2026, 10, 12)),
+          })
+        )
+      );
+    });
   });
 
   it("validates a non-positive amount", async () => {

@@ -14,6 +14,8 @@ import {
   useThemePreference,
 } from "@/lib/theme-preference";
 import { StatusBar } from "expo-status-bar";
+import { useRefetchOnForeground } from "@/lib/useRefetchOnForeground";
+import { useMaterialiseOnForeground } from "@/lib/useMaterialiseOnForeground";
 
 type MaterialIconName = ComponentProps<typeof MaterialCommunityIcons>["name"];
 
@@ -25,6 +27,16 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+function RefetchOnForeground() {
+  useRefetchOnForeground();
+  return null;
+}
+
+function MaterialiseOnForeground() {
+  useMaterialiseOnForeground();
+  return null;
+}
 
 function ThemedApp() {
   const { theme, isDark } = useThemePreference();
@@ -79,7 +91,9 @@ function ThemedApp() {
       }}
     >
       <QueryClientProvider client={queryClient}>
+        <RefetchOnForeground />
         <AuthProvider>
+          <MaterialiseOnForeground />
           <DisplayCurrencyProvider>
             <SnackbarProvider>
               <ConfirmProvider>
@@ -111,6 +125,10 @@ function ThemedApp() {
                   <Stack.Screen
                     name="group-settle-up"
                     options={{ ...modalScreenOptions, title: "Settle Up" }}
+                  />
+                  <Stack.Screen
+                    name="repeating"
+                    options={{ ...modalScreenOptions, title: "Repeating" }}
                   />
                   <Stack.Screen
                     name="group-edit-payment"

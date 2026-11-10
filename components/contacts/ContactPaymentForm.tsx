@@ -14,6 +14,8 @@ type ContactPaymentFormProps = {
   onAmountChange: (amount: string) => void;
   note: string;
   onNoteChange: (note: string) => void;
+  date: Date | null | undefined;
+  onDateChange: (date: Date | null) => void;
   pairCurrency: string;
   isPending: boolean;
   onSubmit: () => void;
@@ -29,6 +31,8 @@ export function ContactPaymentForm({
   onAmountChange,
   note,
   onNoteChange,
+  date,
+  onDateChange,
   pairCurrency,
   isPending,
   onSubmit,
@@ -68,6 +72,8 @@ export function ContactPaymentForm({
         onAmountChange={onAmountChange}
         note={note}
         onNoteChange={onNoteChange}
+        date={date}
+        onDateChange={onDateChange}
         currency={pairCurrency}
       />
 

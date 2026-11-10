@@ -5,7 +5,23 @@ import type {
   PaymentWithProfiles,
 } from "../types";
 import { useAuth } from "../auth";
+import { UPCOMING_OVERLAP_MS } from "../upcoming";
 import { invalidateGroupQueries } from "./invalidate";
+
+const ACTIVITY_LIMIT = 50;
+const ACTIVITY_PAYMENT_SELECT = `
+          id,
+          amount,
+          currency,
+          date,
+          paid_by,
+          paid_to,
+          group_id,
+          note,
+          payer:profiles!payments_paid_by_fkey (*),
+          payee:profiles!payments_paid_to_fkey (*),
+          groups (name)
+        `;
 
 export function useRecentPayments() {
   const { user } = useAuth();
@@ -15,23 +31,34 @@ export function useRecentPayments() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("payments")
-        .select(
-          `
-          id,
-          amount,
-          currency,
-          created_at,
-          paid_by,
-          paid_to,
-          group_id,
-          note,
-          payer:profiles!payments_paid_by_fkey (*),
-          payee:profiles!payments_paid_to_fkey (*),
-          groups (name)
-        `
-        )
-        .order("created_at", { ascending: false })
-        .limit(50);
+        .select(ACTIVITY_PAYMENT_SELECT)
+        .lte("date", new Date().toISOString())
+        .order("date", { ascending: false })
+        .limit(ACTIVITY_LIMIT);
+
+      if (error) throw error;
+      return data as unknown as ActivityPayment[];
+    },
+    enabled: !!user,
+  });
+}
+
+// Future-dated rows, soonest first; the recent read above leaves them out so
+// they cannot take its 50 slots. The key sits under the recent key's prefix, so
+// every activity invalidation covers it too. It starts UPCOMING_OVERLAP_MS before
+// now so a row dated between the two reads' clock readings is in one of them.
+export function useUpcomingPayments() {
+  const { user } = useAuth();
+
+  return useQuery({
+    queryKey: ["activity-payments", user?.id, "upcoming"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("payments")
+        .select(ACTIVITY_PAYMENT_SELECT)
+        .gt("date", new Date(Date.now() - UPCOMING_OVERLAP_MS).toISOString())
+        .order("date", { ascending: true })
+        .limit(ACTIVITY_LIMIT);
 
       if (error) throw error;
       return data as unknown as ActivityPayment[];
@@ -54,7 +81,7 @@ export function useGroupPayments(groupId: string) {
         `
         )
         .eq("group_id", groupId)
-        .order("created_at", { ascending: false });
+        .order("date", { ascending: false });
 
       if (error) throw error;
       return data as unknown as PaymentWithProfiles[];
@@ -70,6 +97,9 @@ interface CreatePaymentInput {
   amount: number;
   note?: string;
   currency?: string;
+  // Start of the picked local day; omitted for today (create) or an unchanged
+  // day (edit), so the server defaults to now() or keeps the stored date.
+  date?: string;
 }
 
 export function useCreatePayment() {
@@ -87,6 +117,7 @@ export function useCreatePayment() {
         p_amount: input.amount,
         p_note: input.note ?? null,
         p_currency: input.currency ?? null,
+        p_date: input.date ?? null,
       });
 
       if (error) throw new Error(error.message);
@@ -105,6 +136,7 @@ interface UpdatePaymentInput {
   paidTo: string;
   amount: number;
   note?: string;
+  date?: string;
 }
 
 export function useUpdatePayment() {
@@ -120,6 +152,7 @@ export function useUpdatePayment() {
         p_paid_to: input.paidTo,
         p_amount: input.amount,
         p_note: input.note ?? null,
+        p_date: input.date ?? null,
       });
 
       if (error) throw new Error(error.message);

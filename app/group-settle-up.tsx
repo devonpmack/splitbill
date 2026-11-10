@@ -9,6 +9,7 @@ import {
 import { useGroup } from "@/lib/queries/useGroups";
 import { useCreatePayment } from "@/lib/queries/usePayments";
 import { useAuth } from "@/lib/auth";
+import { useDayPick } from "@/lib/useDayPick";
 import { getErrorMessage } from "@/lib/utils";
 import { useSnackbar } from "@/lib/snackbar";
 import { useAppTheme } from "@/lib/theme";
@@ -36,6 +37,7 @@ export default function SettleUp() {
   const [selectedDebtKey, setSelectedDebtKey] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+  const day = useDayPick();
 
   // Which query is active depends on the group's simplify_debts flag, so the
   // group itself must have loaded before an empty debt list means "settled".
@@ -66,6 +68,10 @@ export default function SettleUp() {
       showError("Please enter a valid amount");
       return;
     }
+    if (day.isInvalid) {
+      showError("Please enter a valid date");
+      return;
+    }
 
     try {
       await createPayment.mutateAsync({
@@ -75,6 +81,7 @@ export default function SettleUp() {
         amount: settleAmount,
         note: note.trim() || undefined,
         currency: groupCurrency,
+        date: day.dateParam,
       });
       showSuccess("Payment recorded!");
       router.back();
@@ -125,6 +132,8 @@ export default function SettleUp() {
                 onAmountChange={setAmount}
                 note={note}
                 onNoteChange={setNote}
+                date={day.value}
+                onDateChange={day.onChange}
                 currency={groupCurrency}
               />
 

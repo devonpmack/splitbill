@@ -99,11 +99,11 @@ describe("sortMembersSelfFirst", () => {
 
 describe("buildActivityFeed", () => {
   it("merges every source into one newest-first feed", () => {
-    const feed = buildActivityFeed({
+    const { past: feed } = buildActivityFeed({
       expenses: [{ id: "e1", date: "2024-01-02" }] as never,
-      payments: [{ id: "p1", created_at: "2024-01-05" }] as never,
+      payments: [{ id: "p1", date: "2024-01-05" }] as never,
       contactExpenses: [{ id: "ce1", date: "2024-01-01" }] as never,
-      contactPayments: [{ id: "cp1", created_at: "2024-01-04" }] as never,
+      contactPayments: [{ id: "cp1", date: "2024-01-04" }] as never,
       simplifyEvents: [{ id: "s1", created_at: "2024-01-03" }] as never,
     });
 
@@ -123,10 +123,155 @@ describe("buildActivityFeed", () => {
       "e1",
       "ce1",
     ]);
-    expect(feed[0].payload).toEqual({ id: "p1", created_at: "2024-01-05" });
+    expect(feed[0].payload).toEqual({ id: "p1", date: "2024-01-05" });
+  });
+
+  it("orders payments by their date, not when they were recorded", () => {
+    const { past: feed } = buildActivityFeed({
+      expenses: [{ id: "e1", date: "2024-01-05" }] as never,
+      payments: [
+        { id: "p1", created_at: "2024-01-01", date: "2024-01-09" },
+      ] as never,
+      contactPayments: [
+        { id: "cp1", created_at: "2024-01-08", date: "2024-01-02" },
+      ] as never,
+    });
+
+    expect(feed.map((item) => item.id)).toEqual(["p1", "e1", "cp1"]);
   });
 
   it("returns an empty feed when every source is missing", () => {
-    expect(buildActivityFeed({})).toEqual([]);
+    expect(buildActivityFeed({})).toEqual({ upcoming: [], past: [] });
+  });
+
+  describe("upcoming rows", () => {
+    const NOW = new Date("2026-11-09T12:00:00.000Z");
+    const PAST = "2026-11-01T00:00:00.000Z";
+    const FUTURE = "2026-11-20T00:00:00.000Z";
+
+    it.each([
+      ["expenses", "expense"],
+      ["payments", "payment"],
+      ["contactExpenses", "contact-expense"],
+      ["contactPayments", "contact-payment"],
+    ] as const)("moves a future row in %s to upcoming only", (source, kind) => {
+      const feed = buildActivityFeed(
+        {
+          [source]: [
+            { id: "past-row", date: PAST },
+            { id: "future-row", date: FUTURE },
+          ],
+        } as never,
+        NOW
+      );
+
+      expect(feed.upcoming.map((i) => [i.kind, i.id])).toEqual([
+        [kind, "future-row"],
+      ]);
+      expect(feed.past.map((i) => [i.kind, i.id])).toEqual([[kind, "past-row"]]);
+    });
+
+    it("orders upcoming soonest first across sources", () => {
+      const feed = buildActivityFeed(
+        {
+          payments: [{ id: "p", date: "2026-12-01T00:00:00.000Z" }],
+          contactExpenses: [{ id: "ce", date: "2026-11-10T00:00:00.000Z" }],
+          contactPayments: [{ id: "cp", date: "2026-11-30T00:00:00.000Z" }],
+          upcomingExpenses: [{ id: "e", date: "2026-11-15T00:00:00.000Z" }],
+        } as never,
+        NOW
+      );
+
+      expect(feed.upcoming.map((i) => i.id)).toEqual(["ce", "e", "cp", "p"]);
+      expect(feed.past).toEqual([]);
+    });
+
+    it("takes the upcoming-expenses source as upcoming and drops a duplicate of a past row", () => {
+      const feed = buildActivityFeed(
+        {
+          expenses: [{ id: "e1", date: PAST }],
+          upcomingExpenses: [
+            { id: "e2", date: FUTURE },
+            { id: "e1", date: PAST },
+          ],
+        } as never,
+        NOW
+      );
+
+      expect(feed.upcoming.map((i) => i.id)).toEqual(["e2"]);
+      expect(feed.past.map((i) => i.id)).toEqual(["e1"]);
+    });
+
+    it("moves an upcoming-expenses row to the past once its date has passed", () => {
+      const sources = {
+        upcomingExpenses: [{ id: "e1", date: FUTURE }],
+      } as never;
+
+      expect(buildActivityFeed(sources, NOW).upcoming).toHaveLength(1);
+
+      const later = new Date("2026-11-21T00:00:00.000Z");
+      const feed = buildActivityFeed(sources, later);
+      expect(feed.upcoming).toEqual([]);
+      expect(feed.past.map((i) => i.id)).toEqual(["e1"]);
+    });
+
+    it.each([
+      ["upcomingPayments", "payment"],
+      ["upcomingContactExpenses", "contact-expense"],
+      ["upcomingContactPayments", "contact-payment"],
+    ] as const)(
+      "takes %s as upcoming, drops a duplicate of a recent row, and moves it to the past once its date passes",
+      (source, kind) => {
+        const recent = {
+          upcomingPayments: "payments",
+          upcomingContactExpenses: "contactExpenses",
+          upcomingContactPayments: "contactPayments",
+        }[source];
+        const sources = {
+          [recent]: [{ id: "r1", date: PAST }],
+          [source]: [
+            { id: "r2", date: FUTURE },
+            { id: "r1", date: PAST },
+          ],
+        } as never;
+
+        const feed = buildActivityFeed(sources, NOW);
+        expect(feed.upcoming.map((i) => [i.kind, i.id])).toEqual([[kind, "r2"]]);
+        expect(feed.past.map((i) => i.id)).toEqual(["r1"]);
+
+        const later = buildActivityFeed(sources, new Date("2026-11-21T00:00:00.000Z"));
+        expect(later.upcoming).toEqual([]);
+        expect(later.past.map((i) => i.id)).toEqual(["r2", "r1"]);
+      }
+    );
+
+    it("never lists a simplify-debts event as upcoming, even one stamped ahead of this device's clock", () => {
+      const feed = buildActivityFeed(
+        { simplifyEvents: [{ id: "s", created_at: FUTURE }] } as never,
+        NOW
+      );
+
+      expect(feed.upcoming).toEqual([]);
+      expect(feed.past.map((i) => i.id)).toEqual(["s"]);
+    });
+
+    it("treats a row exactly at now as past", () => {
+      const feed = buildActivityFeed(
+        { payments: [{ id: "p", date: NOW.toISOString() }] } as never,
+        NOW
+      );
+
+      expect(feed.upcoming).toEqual([]);
+      expect(feed.past.map((i) => i.id)).toEqual(["p"]);
+    });
+
+    it("has no upcoming rows when everything is in the past", () => {
+      const feed = buildActivityFeed(
+        { expenses: [{ id: "e", date: PAST }] } as never,
+        NOW
+      );
+
+      expect(feed.upcoming).toEqual([]);
+    });
   });
 });
