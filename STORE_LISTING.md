@@ -45,13 +45,13 @@ Made for every day
 - View balances in the currency you prefer
 - Light and dark themes
 
-Sign up with your email address and start splitting in a minute. Evenpot is made by Devin Software.
+Sign up with your email address and start splitting in a minute. Evenpot is made by Devon Software.
 ```
 
 ## Things to confirm before pasting
 
 - **"Free, no ads, no limits, no Pro tier" is a promise.** It is true of the app today (no ads, in-app purchase or paywall code). Keep it only if that is the intent; if a paid plan or ads are ever added, change the listing first. Not in the title, per the Play policy.
 - **Alerts.** The notification switches in Settings only save a local preference today and nothing sends push notifications yet, so the listing does not mention alerts. Add it when that ships.
-- **Developer name.** The last line says "Devin Software", as given for the Play developer account. Change or drop it if the account shows a different name.
+- **Developer name.** The last line says "Devon Software", confirmed by the account owner as the name of the Play developer account. Make sure it matches what the Console shows.
 - **Features.** Everything listed exists in the app at this commit. If the recurring and future-dated transactions work lands later, add a line for it in the update that ships it.
 - **Still needed in the Console, not written here:** a 512 x 512 icon, a 1024 x 500 feature graphic, at least two phone screenshots, the privacy policy URL, and the category (Finance or Productivity).
