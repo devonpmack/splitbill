@@ -1,5 +1,11 @@
 import { isUpcoming } from "./dates";
 
+// The recent and the upcoming read of one source each take their own reading of
+// the clock, so a row dated between the two could be in neither. The upcoming
+// read starts this far before its own now: the overlap is de-duplicated by id
+// and the rows in it are classed by the client clock like any other.
+export const UPCOMING_OVERLAP_MS = 60_000;
+
 // Splits rows into future-dated ("upcoming", soonest first) and the rest
 // (newest first). Display only: the server decides what counts toward balances.
 export function partitionUpcoming<T>(

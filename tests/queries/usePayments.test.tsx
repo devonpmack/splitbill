@@ -7,6 +7,7 @@ import {
   queryBuilder,
 } from "../helpers/testUtils";
 import React from "react";
+import { UPCOMING_OVERLAP_MS } from "@/lib/upcoming";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import {
@@ -346,6 +347,25 @@ describe("useRecentPayments and useUpcomingPayments split the feed at now", () =
     expect(builder.order).toHaveBeenCalledWith("date", { ascending: false });
   });
 
+  it("a row dated between the two reads' own clock readings is in at least one of them", async () => {
+    const recentBuilder = queryBuilder({ data: [], error: null });
+    const upcomingBuilder = queryBuilder({ data: [], error: null });
+
+    mockedSupabase.from.mockReturnValue(recentBuilder);
+    const recent = await renderHook(() => useRecentPayments(), { wrapper: createWrapper() });
+    await waitFor(() => expect(recent.result.current.isSuccess).toBe(true));
+
+    // The upcoming read runs 30 s after the recent one.
+    jest.setSystemTime(NOW.getTime() + 30_000);
+    mockedSupabase.from.mockReturnValue(upcomingBuilder);
+    const upcoming = await renderHook(() => useUpcomingPayments(), { wrapper: createWrapper() });
+    await waitFor(() => expect(upcoming.result.current.isSuccess).toBe(true));
+
+    const recentUpTo = new Date(recentBuilder.lte.mock.calls[0][1]).getTime();
+    const upcomingAfter = new Date(upcomingBuilder.gt.mock.calls[0][1]).getTime();
+    expect(upcomingAfter).toBeLessThan(recentUpTo);
+  });
+
   it("useUpcomingPayments reads only rows dated after now, soonest first", async () => {
     const rows = [{ id: "r1" }];
     const builder = queryBuilder({ data: rows, error: null });
@@ -361,7 +381,10 @@ describe("useRecentPayments and useUpcomingPayments split the feed at now", () =
     expect(builder.select).toHaveBeenCalledWith(
       expect.stringMatching(/^\s*id,[\s\S]*\bdate,/)
     );
-    expect(builder.gt).toHaveBeenCalledWith("date", NOW.toISOString());
+    expect(builder.gt).toHaveBeenCalledWith(
+      "date",
+      new Date(NOW.getTime() - UPCOMING_OVERLAP_MS).toISOString()
+    );
     expect(builder.lte).not.toHaveBeenCalled();
     expect(builder.order).toHaveBeenCalledWith("date", { ascending: true });
     expect(builder.limit).toHaveBeenCalledWith(50);

@@ -59,13 +59,15 @@ describe("useNow", () => {
     const { result } = await renderHook(() =>
       useNow([inMs(60_000), inMs(10_000)], onElapsed)
     );
-    expect(hookDelays()).toEqual([10_000 + SLACK]);
+    // One timer moves the display at the date, one refetches 2 s later.
+    expect(hookDelays()).toEqual([10_000, 10_000 + SLACK]);
 
     await act(async () => {
       jest.advanceTimersByTime(10_000 + SLACK - 1);
     });
+    // The display has moved to the date; the refetch waits out the slack.
     expect(onElapsed).not.toHaveBeenCalled();
-    expect(result.current.getTime()).toBe(START.getTime());
+    expect(isUpcoming(inMs(10_000), result.current)).toBe(false);
 
     await act(async () => {
       jest.advanceTimersByTime(1);
@@ -83,14 +85,18 @@ describe("useNow", () => {
     await act(async () => {
       jest.advanceTimersByTime(10_000 + SLACK);
     });
-    expect(hookDelays()).toEqual([10_000 + SLACK, 50_000]);
+    expect(onElapsed).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       jest.advanceTimersByTime(50_000);
     });
     expect(onElapsed).toHaveBeenCalledTimes(2);
     expect(result.current.getTime()).toBe(START.getTime() + 60_000 + SLACK);
-    expect(hookDelays()).toHaveLength(2);
+
+    await act(async () => {
+      jest.advanceTimersByTime(60_000);
+    });
+    expect(onElapsed).toHaveBeenCalledTimes(2);
   });
 
   it("reschedules for the remainder when the timer fires before the date", async () => {
@@ -103,7 +109,6 @@ describe("useNow", () => {
       jest.advanceTimersByTime(10_000 + SLACK);
     });
     expect(onElapsed).not.toHaveBeenCalled();
-    expect(hookDelays()).toEqual([10_000 + SLACK, 5_000]);
 
     await act(async () => {
       jest.advanceTimersByTime(5_000);
@@ -116,14 +121,13 @@ describe("useNow", () => {
     const { result } = await renderHook(() =>
       useNow([inMs(MAX_TIMEOUT + 5_000 - SLACK)], onElapsed)
     );
-    expect(hookDelays()).toEqual([MAX_TIMEOUT]);
+    expect(hookDelays()).toEqual([MAX_TIMEOUT, MAX_TIMEOUT]);
 
     await act(async () => {
       jest.advanceTimersByTime(MAX_TIMEOUT);
     });
     expect(onElapsed).not.toHaveBeenCalled();
     expect(result.current.getTime()).toBe(START.getTime() + MAX_TIMEOUT);
-    expect(hookDelays()).toEqual([MAX_TIMEOUT, 5_000]);
 
     await act(async () => {
       jest.advanceTimersByTime(5_000);
@@ -179,7 +183,7 @@ describe("useNow", () => {
 
     dates = [inMs(5_000)];
     await rerender({});
-    expect(hookDelays()).toEqual([5_000 + SLACK]);
+    expect(hookDelays()).toEqual([5_000, 5_000 + SLACK]);
 
     await act(async () => {
       jest.advanceTimersByTime(5_000 + SLACK);
@@ -235,5 +239,127 @@ describe("useNow", () => {
     await rerender({});
 
     expect(result.current.getTime()).toBe(START.getTime() + 600_000);
+  });
+
+  describe("inside the 2 s slack after a date", () => {
+    it("still refetches, once, when an unrelated re-render happens just after the date", async () => {
+      const onElapsed = jest.fn();
+      const { rerender } = await renderHook(() =>
+        useNow([inMs(10_000)], onElapsed)
+      );
+
+      await act(async () => {
+        jest.advanceTimersByTime(10_500);
+      });
+      await rerender({});
+      expect(onElapsed).not.toHaveBeenCalled();
+
+      await act(async () => {
+        jest.advanceTimersByTime(SLACK);
+      });
+      expect(onElapsed).toHaveBeenCalledTimes(1);
+    });
+
+    it("still refetches when the app returns to the foreground inside the slack", async () => {
+      const onElapsed = jest.fn();
+      await renderHook(() => useNow([inMs(10_000)], onElapsed));
+
+      jest.setSystemTime(START.getTime() + 10_500);
+      await act(async () => {
+        appStateHandler?.("active");
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(SLACK);
+      });
+
+      expect(onElapsed).toHaveBeenCalledTimes(1);
+    });
+
+    it("refetches at the first opportunity when the app was suspended past the date and slack", async () => {
+      const onElapsed = jest.fn();
+      await renderHook(() => useNow([inMs(10_000)], onElapsed));
+
+      jest.setSystemTime(START.getTime() + 15_000);
+      await act(async () => {
+        appStateHandler?.("active");
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(0);
+      });
+
+      expect(onElapsed).toHaveBeenCalledTimes(1);
+    });
+
+    it("fires exactly once per elapsed date, whatever re-renders or foreground events follow", async () => {
+      const onElapsed = jest.fn();
+      const { rerender } = await renderHook(() =>
+        useNow([inMs(10_000)], onElapsed)
+      );
+
+      await act(async () => {
+        jest.advanceTimersByTime(10_500);
+      });
+      await rerender({});
+      await act(async () => {
+        appStateHandler?.("active");
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(SLACK);
+      });
+      await rerender({});
+      await act(async () => {
+        appStateHandler?.("active");
+        jest.advanceTimersByTime(60_000);
+      });
+
+      expect(onElapsed).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not refetch for a date that was already past when it first appeared", async () => {
+      const onElapsed = jest.fn();
+      let dates: string[] = [];
+      const { rerender } = await renderHook(() => useNow(dates, onElapsed));
+
+      jest.setSystemTime(START.getTime() + 60_000);
+      dates = [inMs(59_000)];
+      await rerender({});
+      await act(async () => {
+        jest.advanceTimersByTime(60_000);
+      });
+
+      expect(onElapsed).not.toHaveBeenCalled();
+    });
+
+    it("does not refetch for a row that was cancelled before its date", async () => {
+      const onElapsed = jest.fn();
+      let dates = [inMs(10_000)];
+      const { rerender } = await renderHook(() => useNow(dates, onElapsed));
+
+      dates = [];
+      await rerender({});
+      await act(async () => {
+        jest.advanceTimersByTime(60_000);
+      });
+
+      expect(onElapsed).not.toHaveBeenCalled();
+    });
+  });
+
+  it("moves the display to the date itself, before the refetch fires", async () => {
+    const onElapsed = jest.fn();
+    const seen: number[] = [];
+    await renderHook(() => {
+      const now = useNow([inMs(10_000)], onElapsed);
+      seen.push(now.getTime());
+      return now;
+    });
+
+    await act(async () => {
+      jest.advanceTimersByTime(10_000);
+    });
+
+    expect(seen[seen.length - 1]).toBe(START.getTime() + 10_000);
+    expect(isUpcoming(inMs(10_000), new Date(seen[seen.length - 1]))).toBe(false);
+    expect(onElapsed).not.toHaveBeenCalled();
   });
 });

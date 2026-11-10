@@ -5,6 +5,7 @@ import type {
   PaymentWithProfiles,
 } from "../types";
 import { useAuth } from "../auth";
+import { UPCOMING_OVERLAP_MS } from "../upcoming";
 import { invalidateGroupQueries } from "./invalidate";
 
 const ACTIVITY_LIMIT = 50;
@@ -44,7 +45,8 @@ export function useRecentPayments() {
 
 // Future-dated rows, soonest first; the recent read above leaves them out so
 // they cannot take its 50 slots. The key sits under the recent key's prefix, so
-// every activity invalidation covers it too.
+// every activity invalidation covers it too. It starts UPCOMING_OVERLAP_MS before
+// now so a row dated between the two reads' clock readings is in one of them.
 export function useUpcomingPayments() {
   const { user } = useAuth();
 
@@ -54,7 +56,7 @@ export function useUpcomingPayments() {
       const { data, error } = await supabase
         .from("payments")
         .select(ACTIVITY_PAYMENT_SELECT)
-        .gt("date", new Date().toISOString())
+        .gt("date", new Date(Date.now() - UPCOMING_OVERLAP_MS).toISOString())
         .order("date", { ascending: true })
         .limit(ACTIVITY_LIMIT);
 
