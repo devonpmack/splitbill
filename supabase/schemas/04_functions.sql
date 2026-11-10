@@ -424,8 +424,9 @@ begin
   -- date, so the caller cannot leave while one involves them. "Involves" is
   -- get_upcoming_expenses' rule, so whatever blocks is listed there to cancel.
   -- The same goes for a schedule that is still running (not stopped or
-  -- completed): it will create occurrences, so it blocks its creator, its payer
-  -- and every user in its splits. Any member may stop a schedule.
+  -- completed): it will create occurrences, so it blocks its payer and every user
+  -- in its splits (compared as uuids). Its creator is audit only and may leave.
+  -- Any member may stop a schedule.
   if exists (
     select 1 from public.expenses e
     where e.group_id = p_group_id
@@ -449,11 +450,10 @@ begin
     where s.group_id = p_group_id
       and s.stopped_at is null
       and (
-        s.created_by = v_uid
-        or s.paid_by = v_uid
+        s.paid_by = v_uid
         or exists (
           select 1 from jsonb_array_elements(s.splits) sp
-          where sp->>'userId' = v_uid::text
+          where (sp->>'userId')::uuid = v_uid
         )
       )
   ) then
@@ -3378,8 +3378,8 @@ grant execute on function public.materialise_my_recurring() to authenticated;
 -- Creates a repeating expense. Exactly one of p_group_id / p_contact_id is set;
 -- p_contact_id is the OTHER person's profile id (the pair is derived from the
 -- caller, and must be accepted contacts). The payload is the create-expense
--- payload: p_paid_by and p_splits ([{userId, amount}], any baseAmount is
--- ignored) are validated here by running the first occurrence through the
+-- payload: p_paid_by and p_splits ([{userId, amount}]; only those two keys are
+-- stored, any baseAmount is ignored) are validated here by running the first occurrence through the
 -- expense insert helper and rolling it back, so a schedule that would fail to
 -- materialise is refused up front even when it starts weeks from now.
 -- p_exchange_rate (null means 1) is the rate when it was created; it seeds
@@ -3419,7 +3419,9 @@ declare
   v_currency text := upper(btrim(coalesce(p_currency, 'USD')));
   v_rate numeric := coalesce(p_exchange_rate, 1);
   v_effective_rate numeric;
+  v_amount numeric;
   v_split jsonb;
+  v_norm jsonb;
   v_splits jsonb;
   v_today date;
   v_id uuid;
@@ -3472,7 +3474,8 @@ begin
     raise exception 'Expense payer is required';
   end if;
 
-  if p_amount is null or p_amount <= 0 then
+  if p_amount is null or p_amount <= 0
+    or p_amount = 'NaN'::numeric or p_amount = 'Infinity'::numeric then
     raise exception 'Expense amount must be greater than zero';
   end if;
 
@@ -3480,7 +3483,7 @@ begin
     raise exception 'Expense description is required';
   end if;
 
-  if v_rate <= 0 then
+  if v_rate <= 0 or v_rate = 'NaN'::numeric or v_rate = 'Infinity'::numeric then
     raise exception 'Exchange rate must be greater than zero';
   end if;
 
@@ -3504,7 +3507,11 @@ begin
         or v_split->>'amount' is null then
         raise exception 'Each split needs a user and an amount';
       end if;
-      perform (v_split->>'userId')::uuid, (v_split->>'amount')::numeric;
+      perform (v_split->>'userId')::uuid;
+      v_amount := (v_split->>'amount')::numeric;
+      if v_amount in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) then
+        raise exception 'Each split needs a user and an amount';
+      end if;
     end loop;
   exception when invalid_text_representation or numeric_value_out_of_range then
     raise exception 'Each split needs a user and an amount';
@@ -3532,10 +3539,24 @@ begin
     raise exception 'Number of repeats must be greater than zero';
   end if;
 
+  -- Only [{userId, amount}] is kept: the user as the lowercase uuid text of the
+  -- cast (so every later comparison sees one spelling) and the amount rounded to
+  -- 2 places. Every other key is dropped, so a schedule row, which every member
+  -- can read, never carries whatever else the client sent.
+  select jsonb_agg(
+    jsonb_build_object(
+      'userId', ((t.e->>'userId')::uuid)::text,
+      'amount', round((t.e->>'amount')::numeric, 2)
+    )
+    order by t.ord
+  )
+  into v_norm
+  from jsonb_array_elements(p_splits) with ordinality as t(e, ord);
+
   -- Trial run: the first occurrence, converted the way the engine converts it,
   -- through the same helper (payer, split users, amounts and totals), then undone.
   v_effective_rate := case when v_currency = upper(btrim(v_base)) then 1 else v_rate end;
-  v_splits := public._convert_splits_to_base(p_splits, v_effective_rate, round(p_amount * v_effective_rate, 2));
+  v_splits := public._convert_splits_to_base(v_norm, v_effective_rate, round(p_amount * v_effective_rate, 2));
 
   begin
     if p_group_id is not null then
@@ -3561,7 +3582,7 @@ begin
   values (
     case when p_group_id is not null then 'group' else 'contact' end,
     p_group_id, v_lo, v_hi, v_uid, p_paid_by, btrim(p_description), p_category, round(p_amount, 2),
-    v_currency, v_rate, p_split_type, p_splits, p_start_date, p_tz, p_frequency, p_end_date, p_max_count
+    v_currency, v_rate, p_split_type, v_norm, p_start_date, p_tz, p_frequency, p_end_date, p_max_count
   )
   returning id into v_id;
 
@@ -3572,7 +3593,10 @@ begin
 end;
 $$;
 
--- Stops a repeating expense. Any member of the group (or either contact) may
+-- Stops a repeating expense. A caller who is not a member of the group (or one
+-- of the two contacts) gets the same 'Schedule not found' as for a missing id,
+-- so the id's existence is not revealed; that check runs before the row is
+-- locked. Any member of the group (or either contact) may
 -- stop it, not only its creator or payer, so a split-only member can clear the
 -- leave_group refusal. Marks it stopped and deletes the occurrences that are
 -- still ahead (date in the future) and untouched by hand; past occurrences and
@@ -3600,10 +3624,10 @@ begin
 
   if v_schedule.kind = 'group' then
     if not public.is_group_member(v_schedule.group_id, v_uid) then
-      raise exception 'You are not a member of this group';
+      raise exception 'Schedule not found';
     end if;
   elsif v_uid <> v_schedule.user_lo and v_uid <> v_schedule.user_hi then
-    raise exception 'You are not a participant in this schedule';
+    raise exception 'Schedule not found';
   end if;
 
   select * into v_schedule
