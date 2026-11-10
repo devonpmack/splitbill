@@ -658,6 +658,9 @@ export interface Database {
           currency: string;
           balance: number;
           is_accepted: boolean;
+          // The contact's profiles.deleted_at; null while they still have an
+          // account. Absent on a database that predates the column.
+          contact_deleted_at?: string | null;
         }[];
       };
       get_contact_group_breakdown: {
@@ -767,6 +770,9 @@ export interface ContactWithBalance {
   // exchange rate, so the combined balance is genuinely unknown.
   balance: number | null;
   is_accepted: boolean;
+  // Set when the contact deleted their account: they stay in the list for the
+  // balance they left, but no new expense can be added with them.
+  deleted_at: string | null;
 }
 
 export interface ContactExpenseWithSplits extends ContactExpense {

@@ -7,6 +7,7 @@ import {
 } from "@/lib/queries/useContactExpenses";
 import { useCreateRecurringSchedule } from "@/lib/queries/useRecurringSchedules";
 import { useAuth } from "@/lib/auth";
+import { EmptyState } from "@/components/EmptyState";
 import { ExpenseFormScreen } from "@/components/ExpenseFormScreen";
 import type { MemberWithProfile } from "@/lib/types";
 
@@ -40,6 +41,19 @@ export function ContactAddExpenseScreen() {
     member.user_id === user?.id
       ? "You"
       : (member.profiles?.full_name ?? contactName);
+
+  // The server refuses a new expense with someone who deleted their account, so
+  // say so up front instead of after the form is filled in. An existing expense
+  // with them can still be edited.
+  if (contact?.deleted_at && !isEdit) {
+    return (
+      <EmptyState
+        icon="account-off"
+        title="You can't add new expenses with someone who deleted their account"
+        subtitle={`${contactName}'s balance and past expenses stay. You can still settle up.`}
+      />
+    );
+  }
 
   return (
     <ExpenseFormScreen

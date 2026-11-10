@@ -20,6 +20,7 @@ interface ContactBalanceContextRow {
   currency: string;
   balance: number;
   is_accepted: boolean;
+  deleted_at: string | null;
 }
 
 export function useContacts() {
@@ -41,6 +42,7 @@ export function useContacts() {
         currency: row.currency,
         balance: Number(row.balance),
         is_accepted: row.is_accepted,
+        deleted_at: row.contact_deleted_at ?? null,
       }));
     },
     enabled: !!user,
@@ -68,6 +70,7 @@ export function useContacts() {
           avatar_url: row.avatar_url,
           balance: converted,
           is_accepted: row.is_accepted,
+          deleted_at: row.deleted_at,
         });
       }
     }
