@@ -195,7 +195,7 @@ describe("SQL security guards", () => {
     // Takes an email and resolves it server-side, so the client never handles
     // a user id for an address it just typed.
     expect(body).toMatch(/lower\(au\.email\) = v_email/i);
-    expect(body).toMatch(/No Evenpot account found for/i);
+    expect(body).toMatch(/No account found for/i);
     // Cannot request yourself, and cannot duplicate an existing contact.
     expect(body).toMatch(/v_recipient = v_uid/i);
     expect(body).toMatch(
@@ -296,7 +296,7 @@ describe("SQL security guards", () => {
     // Re-adding an existing member is rejected rather than silently skipped,
     // and unknown addresses are named back to the caller.
     expect(body).toMatch(/Already in this group/i);
-    expect(body).toMatch(/No Evenpot account found for/i);
+    expect(body).toMatch(/No account found for/i);
   });
 
   it("restricts renaming to members and rejects blank names", () => {
