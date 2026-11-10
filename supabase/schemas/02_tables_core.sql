@@ -3,11 +3,15 @@
 -- NOTE: append new columns at the END of each table. The diff tool emits
 -- positional ALTERs, so inserting a column mid-table produces a noisier diff.
 
+-- id matches auth.users.id but is deliberately not a foreign key to it: a profile
+-- outlives its auth user so deleting an account cannot cascade through the ledger.
 create table public.profiles (
-  id uuid primary key references auth.users (id) on delete cascade,
+  id uuid primary key,
   full_name text not null,
   avatar_url text,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- Set on a tombstone: a profile whose person has deleted their account.
+  deleted_at timestamptz
 );
 
 create table public.groups (
