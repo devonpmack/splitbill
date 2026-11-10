@@ -11,6 +11,7 @@ import { MemberEmailInput } from "@/components/groups/MemberEmailInput";
 import { CurrencyPicker } from "@/components/CurrencyPicker";
 import { FormScreen } from "@/components/FormScreen";
 import { useDisplayCurrency } from "@/lib/display-currency";
+import { APP_NAME } from "@/lib/app-name";
 
 export default function CreateGroup() {
   const theme = useAppTheme();
@@ -43,7 +44,7 @@ export default function CreateGroup() {
     try {
       const exists = await checkEmail.mutateAsync(email);
       if (!exists) {
-        showError(`No Evenpot account found for ${email}`);
+        showError(`No ${APP_NAME} account found for ${email}`);
         return null;
       }
     } catch {

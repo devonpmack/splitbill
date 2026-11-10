@@ -1,4 +1,5 @@
 import { screen } from "@testing-library/react-native";
+import { APP_NAME } from "@/lib/app-name";
 import { renderWithPaper } from "../helpers/testUtils";
 import Notifications from "@/app/(tabs)/account/notifications";
 
@@ -8,7 +9,7 @@ describe("Notifications screen", () => {
 
     expect(screen.getByText("Notifications are coming soon")).toBeTruthy();
     expect(
-      screen.getByText(/doesn't send push notifications yet/i)
+      screen.getByText(`${APP_NAME} doesn't send push notifications yet.`)
     ).toBeTruthy();
     expect(screen.queryAllByRole("switch")).toHaveLength(0);
   });

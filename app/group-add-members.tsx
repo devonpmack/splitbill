@@ -12,6 +12,7 @@ import { useAuth } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/utils";
 import { FormScreen } from "@/components/FormScreen";
 import { MemberEmailInput } from "@/components/groups/MemberEmailInput";
+import { APP_NAME } from "@/lib/app-name";
 
 export default function AddGroupMembers() {
   const theme = useAppTheme();
@@ -51,7 +52,7 @@ export default function AddGroupMembers() {
         email,
       });
       if (status === "not_registered") {
-        showError(`No Evenpot account found for ${email}`);
+        showError(`No ${APP_NAME} account found for ${email}`);
         return null;
       }
       if (status === "already_member") {

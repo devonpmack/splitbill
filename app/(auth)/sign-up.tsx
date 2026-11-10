@@ -4,6 +4,7 @@ import { router } from "expo-router";
 import { Button, HelperText, Text, TextInput } from "react-native-paper";
 import { useAuth } from "@/lib/auth";
 import { useAppTheme } from "@/lib/theme";
+import { APP_NAME } from "@/lib/app-name";
 
 export default function SignUp() {
   const theme = useAppTheme();
@@ -48,7 +49,7 @@ export default function SignUp() {
             variant="displaySmall"
             style={{ color: theme.colors.primary, textAlign: "center" }}
           >
-            Evenpot
+            {APP_NAME}
           </Text>
           <Text
             variant="bodyLarge"

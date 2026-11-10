@@ -18,7 +18,15 @@ beforeEach(() => {
   (useAuth as jest.Mock).mockReturnValue({ signIn: mockSignIn });
 });
 
+import { APP_NAME } from "@/lib/app-name";
+
 describe("SignIn screen", () => {
+  it("shows the app name as the title", async () => {
+    await renderWithPaper(<SignIn />);
+
+    expect(screen.getByText(APP_NAME)).toBeTruthy();
+  });
+
   it("validates that both fields are filled", async () => {
     await renderWithPaper(<SignIn />);
 
