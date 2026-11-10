@@ -535,7 +535,7 @@ grant execute on function public.reject_deleted_caller() to anon, authenticated,
 -- Point PostgREST at the guard. Setting a role parameter needs rights that a hosted
 -- project's migration role may not have, and the role does not exist where there is
 -- no PostgREST, so this never fails the migration: it raises a NOTICE instead.
--- If the NOTICE "db_pre_request not set" appears, apply it by hand as a superuser
+-- If the NOTICE "db_pre_request not set" appears, apply it by hand with a role that may alter the authenticator role (hosted projects have no superuser; see the PR body)
 -- (the SQL editor on a hosted project):
 --   alter role authenticator set pgrst.db_pre_request = 'public.reject_deleted_caller';
 --   notify pgrst, 'reload config';
