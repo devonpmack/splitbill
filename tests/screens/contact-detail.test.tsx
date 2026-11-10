@@ -470,13 +470,53 @@ describe("ContactDetail upcoming transactions", () => {
     expect(screen.getAllByText("Upcoming")).toHaveLength(2);
 
     await act(async () => {
-      jest.advanceTimersByTime(10_000);
+      jest.advanceTimersByTime(12_000);
     });
 
     expect(screen.queryByText("Upcoming")).toBeNull();
     expect(screen.getByText("Rent")).toBeTruthy();
     expect(refetchBalance).toHaveBeenCalled();
   });
+
+  it.each([
+    ["expense", "Fresh dinner"],
+    ["payment", "You paid Bob $20.00"],
+  ])(
+    "lists a %s created after minutes on screen as history, with no spurious refetch",
+    async (kind, label) => {
+      const refetchBalance = jest.fn().mockResolvedValue(undefined);
+      const view = await renderWithPaper(<ContactDetail />);
+
+      jest.setSystemTime(new Date(NOW.getTime() + 10 * 60_000));
+      const created = new Date(Date.now() - 2_000).toISOString();
+      setup(
+        kind === "expense"
+          ? {
+              expenses: [
+                { ...futureExpense, id: "fresh", description: "Fresh dinner", date: created },
+              ],
+              payments: [],
+            }
+          : { expenses: [], payments: [{ ...futurePayment, id: "fresh", date: created }] }
+      );
+      (useContactBalance as jest.Mock).mockReturnValue({
+        data: 15,
+        refetch: refetchBalance,
+      });
+      await act(async () => {
+        await view.rerender(<ContactDetail />);
+      });
+
+      expect(screen.getByText(label)).toBeTruthy();
+      expect(screen.queryByText("Upcoming")).toBeNull();
+
+      await act(async () => {
+        jest.advanceTimersByTime(60_000);
+      });
+      expect(screen.queryByText("Upcoming")).toBeNull();
+      expect(refetchBalance).not.toHaveBeenCalled();
+    }
+  );
 
   it("starts the timer from an upcoming payment's date", async () => {
     setup({
@@ -489,7 +529,7 @@ describe("ContactDetail upcoming transactions", () => {
     expect(screen.getAllByText("Upcoming")).toHaveLength(2);
 
     await act(async () => {
-      jest.advanceTimersByTime(10_000);
+      jest.advanceTimersByTime(12_000);
     });
 
     expect(screen.queryByText("Upcoming")).toBeNull();

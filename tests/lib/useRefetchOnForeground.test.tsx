@@ -35,35 +35,81 @@ afterEach(() => {
 });
 
 describe("useRefetchOnForeground", () => {
-  it("invalidates every query when the app returns to the foreground", async () => {
+  beforeEach(() => {
+    jest.useFakeTimers({ now: new Date("2026-11-09T12:00:00.000Z") });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  async function backgroundFor(ms: number, handler = () => appStateHandler) {
+    handler()?.("background");
+    jest.setSystemTime(Date.now() + ms);
+    handler()?.("active");
+  }
+
+  it("invalidates every query when the app returns after a long time in the background", async () => {
     const { Wrapper, invalidate } = makeWrapper();
     await renderHook(() => useRefetchOnForeground(), { wrapper: Wrapper });
 
-    appStateHandler?.("background");
-    expect(invalidate).not.toHaveBeenCalled();
+    await backgroundFor(30_000);
 
-    appStateHandler?.("active");
     expect(invalidate).toHaveBeenCalledTimes(1);
     expect(invalidate).toHaveBeenCalledWith();
   });
 
-  it("does not invalidate again while the app stays active", async () => {
+  it("does nothing after a short time in the background", async () => {
+    const { Wrapper, invalidate } = makeWrapper();
+    await renderHook(() => useRefetchOnForeground(), { wrapper: Wrapper });
+
+    await backgroundFor(29_999);
+
+    expect(invalidate).not.toHaveBeenCalled();
+  });
+
+  it("does nothing for an inactive blip, however long it lasts (notification pulldown)", async () => {
+    const { Wrapper, invalidate } = makeWrapper();
+    await renderHook(() => useRefetchOnForeground(), { wrapper: Wrapper });
+
+    appStateHandler?.("inactive");
+    jest.setSystemTime(Date.now() + 5 * 60_000);
+    appStateHandler?.("active");
+
+    expect(invalidate).not.toHaveBeenCalled();
+  });
+
+  it("counts inactive time before the background toward nothing: the clock starts at background", async () => {
+    const { Wrapper, invalidate } = makeWrapper();
+    await renderHook(() => useRefetchOnForeground(), { wrapper: Wrapper });
+
+    appStateHandler?.("inactive");
+    jest.setSystemTime(Date.now() + 60_000);
+    appStateHandler?.("background");
+    jest.setSystemTime(Date.now() + 1_000);
+    appStateHandler?.("active");
+
+    expect(invalidate).not.toHaveBeenCalled();
+  });
+
+  it("does not invalidate again for a second activation without a new background", async () => {
+    const { Wrapper, invalidate } = makeWrapper();
+    await renderHook(() => useRefetchOnForeground(), { wrapper: Wrapper });
+
+    await backgroundFor(60_000);
+    jest.setSystemTime(Date.now() + 60_000);
+    appStateHandler?.("active");
+
+    expect(invalidate).toHaveBeenCalledTimes(1);
+  });
+
+  it("does nothing while the app stays active", async () => {
     const { Wrapper, invalidate } = makeWrapper();
     await renderHook(() => useRefetchOnForeground(), { wrapper: Wrapper });
 
     appStateHandler?.("active");
 
     expect(invalidate).not.toHaveBeenCalled();
-  });
-
-  it("treats inactive to active as a return to the foreground", async () => {
-    const { Wrapper, invalidate } = makeWrapper();
-    await renderHook(() => useRefetchOnForeground(), { wrapper: Wrapper });
-
-    appStateHandler?.("inactive");
-    appStateHandler?.("active");
-
-    expect(invalidate).toHaveBeenCalledTimes(1);
   });
 
   it("stops listening on unmount", async () => {

@@ -738,7 +738,7 @@ describe("GroupDetail upcoming transactions", () => {
     mockRefetchBalances.mockClear();
 
     await act(async () => {
-      jest.advanceTimersByTime(10_000);
+      jest.advanceTimersByTime(12_000);
     });
 
     expect(screen.queryByText("Upcoming")).toBeNull();
@@ -746,6 +746,47 @@ describe("GroupDetail upcoming transactions", () => {
     expect(mockRefetchBalances).toHaveBeenCalled();
     expect(mockRefetchExpenses).toHaveBeenCalled();
   });
+
+  it.each([
+    ["expense", "Fresh dinner"],
+    ["payment", "You paid Bob $20.00"],
+  ])(
+    "lists a %s created after minutes on screen as history, with no spurious refetch",
+    async (kind, label) => {
+      const view = await renderWithPaper(<GroupDetail />);
+      mockRefetchBalances.mockClear();
+      mockRefetchExpenses.mockClear();
+      mockRefetchPayments.mockClear();
+
+      // Ten minutes later the user adds a row; the server stamps its now().
+      jest.setSystemTime(new Date(NOW.getTime() + 10 * 60_000));
+      const created = new Date(Date.now() - 2_000).toISOString();
+      setup(
+        kind === "expense"
+          ? {
+              expenses: [
+                { ...futureExpense, id: "fresh", description: "Fresh dinner", date: created },
+              ],
+              payments: [],
+            }
+          : { expenses: [], payments: [{ ...soonerPayment, id: "fresh", date: created }] }
+      );
+      await act(async () => {
+        await view.rerender(<GroupDetail />);
+      });
+
+      expect(screen.getByText(label)).toBeTruthy();
+      expect(screen.queryByText("Upcoming")).toBeNull();
+
+      await act(async () => {
+        jest.advanceTimersByTime(60_000);
+      });
+      expect(screen.queryByText("Upcoming")).toBeNull();
+      expect(mockRefetchBalances).not.toHaveBeenCalled();
+      expect(mockRefetchExpenses).not.toHaveBeenCalled();
+      expect(mockRefetchPayments).not.toHaveBeenCalled();
+    }
+  );
 
   it("starts the timer from an upcoming payment's date", async () => {
     setup({
@@ -758,7 +799,7 @@ describe("GroupDetail upcoming transactions", () => {
     expect(screen.getAllByText("Upcoming")).toHaveLength(2);
 
     await act(async () => {
-      jest.advanceTimersByTime(10_000);
+      jest.advanceTimersByTime(12_000);
     });
 
     expect(screen.queryByText("Upcoming")).toBeNull();
