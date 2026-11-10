@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { useMaterialiseOnForeground } from "@/lib/useMaterialiseOnForeground";
+import { freezeNow } from "../helpers/testUtils";
 
 jest.mock("@/lib/supabase", () => ({ supabase: { rpc: jest.fn() } }));
 jest.mock("@/lib/auth", () => ({ useAuth: jest.fn() }));
@@ -28,14 +29,19 @@ function makeWrapper() {
   return { Wrapper, invalidate, keys };
 }
 
-async function foreground() {
+// The app goes to the background, `ms` pass, and it comes back.
+async function awayFor(ms: number) {
   await act(async () => {
     appStateHandler?.("background");
+    jest.setSystemTime(Date.now() + ms);
     appStateHandler?.("active");
   });
 }
 
+const LONG_AWAY = 120_000;
+
 beforeEach(() => {
+  freezeNow(new Date("2026-11-09T12:00:00.000Z"));
   appStateHandler = undefined;
   mockRemove.mockClear();
   mockedRpc.mockReset();
@@ -51,6 +57,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  jest.useRealTimers();
   jest.restoreAllMocks();
 });
 
@@ -63,42 +70,99 @@ describe("useMaterialiseOnForeground", () => {
     expect(mockedRpc).toHaveBeenCalledWith("materialise_my_recurring");
   });
 
-  it("catches up once per return to the foreground", async () => {
+  it("catches up again after a real time in the background", async () => {
     const { Wrapper } = makeWrapper();
     await renderHook(() => useMaterialiseOnForeground(), { wrapper: Wrapper });
     await waitFor(() => expect(mockedRpc).toHaveBeenCalledTimes(1));
 
-    await foreground();
+    await awayFor(LONG_AWAY);
     expect(mockedRpc).toHaveBeenCalledTimes(2);
 
-    await foreground();
+    await awayFor(LONG_AWAY);
     expect(mockedRpc).toHaveBeenCalledTimes(3);
   });
 
-  it("does not call again while the app stays active or goes to the background", async () => {
+  it("calls after exactly 30 s in the background once 60 s have passed since the last call", async () => {
     const { Wrapper } = makeWrapper();
     await renderHook(() => useMaterialiseOnForeground(), { wrapper: Wrapper });
     await waitFor(() => expect(mockedRpc).toHaveBeenCalledTimes(1));
+    jest.setSystemTime(Date.now() + 60_000);
+
+    await awayFor(30_000);
+
+    expect(mockedRpc).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not call for a short time in the background", async () => {
+    const { Wrapper } = makeWrapper();
+    await renderHook(() => useMaterialiseOnForeground(), { wrapper: Wrapper });
+    await waitFor(() => expect(mockedRpc).toHaveBeenCalledTimes(1));
+    jest.setSystemTime(Date.now() + 10 * 60_000);
+
+    await awayFor(29_999);
+
+    expect(mockedRpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not call for an inactive blip, however long it lasts (notification shade, Face ID)", async () => {
+    const { Wrapper } = makeWrapper();
+    await renderHook(() => useMaterialiseOnForeground(), { wrapper: Wrapper });
+    await waitFor(() => expect(mockedRpc).toHaveBeenCalledTimes(1));
+    jest.setSystemTime(Date.now() + 10 * 60_000);
 
     await act(async () => {
+      appStateHandler?.("inactive");
+      jest.setSystemTime(Date.now() + 5 * 60_000);
       appStateHandler?.("active");
-      appStateHandler?.("active");
-      appStateHandler?.("background");
     });
 
     expect(mockedRpc).toHaveBeenCalledTimes(1);
   });
 
-  it("treats inactive to active as a return to the foreground", async () => {
+  it("starts the clock at the background, not at the inactive state before it", async () => {
+    const { Wrapper } = makeWrapper();
+    await renderHook(() => useMaterialiseOnForeground(), { wrapper: Wrapper });
+    await waitFor(() => expect(mockedRpc).toHaveBeenCalledTimes(1));
+    jest.setSystemTime(Date.now() + 10 * 60_000);
+
+    await act(async () => {
+      appStateHandler?.("inactive");
+      jest.setSystemTime(Date.now() + 60_000);
+      appStateHandler?.("background");
+      jest.setSystemTime(Date.now() + 1_000);
+      appStateHandler?.("active");
+    });
+
+    expect(mockedRpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not call twice for one return, however many active events follow", async () => {
     const { Wrapper } = makeWrapper();
     await renderHook(() => useMaterialiseOnForeground(), { wrapper: Wrapper });
     await waitFor(() => expect(mockedRpc).toHaveBeenCalledTimes(1));
 
+    await awayFor(LONG_AWAY);
     await act(async () => {
-      appStateHandler?.("inactive");
+      jest.setSystemTime(Date.now() + LONG_AWAY);
+      appStateHandler?.("active");
       appStateHandler?.("active");
     });
 
+    expect(mockedRpc).toHaveBeenCalledTimes(2);
+  });
+
+  it("waits at least 60 s between calls even after a long background", async () => {
+    const { Wrapper } = makeWrapper();
+    await renderHook(() => useMaterialiseOnForeground(), { wrapper: Wrapper });
+    await waitFor(() => expect(mockedRpc).toHaveBeenCalledTimes(1));
+
+    await awayFor(40_000);
+    expect(mockedRpc).toHaveBeenCalledTimes(1);
+
+    await awayFor(40_000);
+    expect(mockedRpc).toHaveBeenCalledTimes(2);
+
+    await awayFor(59_999);
     expect(mockedRpc).toHaveBeenCalledTimes(2);
   });
 
@@ -113,11 +177,11 @@ describe("useMaterialiseOnForeground", () => {
     await renderHook(() => useMaterialiseOnForeground(), { wrapper: Wrapper });
     await waitFor(() => expect(mockedRpc).toHaveBeenCalledTimes(1));
 
-    await foreground();
+    await awayFor(LONG_AWAY);
     expect(mockedRpc).toHaveBeenCalledTimes(1);
 
     await act(async () => finish({ data: 0, error: null }));
-    await foreground();
+    await awayFor(LONG_AWAY);
     expect(mockedRpc).toHaveBeenCalledTimes(2);
   });
 
@@ -126,7 +190,7 @@ describe("useMaterialiseOnForeground", () => {
     const { Wrapper } = makeWrapper();
     await renderHook(() => useMaterialiseOnForeground(), { wrapper: Wrapper });
 
-    await foreground();
+    await awayFor(LONG_AWAY);
 
     expect(mockedRpc).not.toHaveBeenCalled();
   });
@@ -176,7 +240,7 @@ describe("useMaterialiseOnForeground", () => {
     await act(async () => {});
     expect(invalidate).not.toHaveBeenCalled();
 
-    await foreground();
+    await awayFor(LONG_AWAY);
     expect(mockedRpc).toHaveBeenCalledTimes(2);
   });
 
