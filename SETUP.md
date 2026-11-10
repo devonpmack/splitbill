@@ -102,23 +102,24 @@ row-level security, so people only receive changes to groups they belong to.
 ### Repeating expenses and pg_cron (optional)
 
 Repeating expenses are created ahead of time, up to 48 hours before they are
-due. Two things create them, and either alone is enough:
+due. Nothing here needs setting up; the daily job below is a bonus.
 
-- **The app, on open.** It calls `materialise_my_recurring`, which creates
-  whatever is due for the groups and contacts of the signed-in user. Nothing to
-  set up. It is safe to run any number of times.
-- **A daily job**, if your project's plan offers the `pg_cron` extension. Enable
-  it in *Database → Extensions* (search for `pg_cron`) before running the
-  migrations; the migration `20261109195000_recurring_cron.sql` then schedules
-  the job `evenpot-materialise-recurring` at 05:00 UTC every day. If the
-  extension is off, that migration does nothing and is not an error. If you
-  enable it after the migrations have run, the migration will not run again, so
-  create the job once in *SQL Editor*:
-  `select cron.schedule('evenpot-materialise-recurring', '0 5 * * *', $$select public._materialise_recurring()$$);`
-  To check it, run `select jobname, schedule from cron.job;`.
+- **The migration** `20261109195000_recurring_cron.sql` tries to enable the
+  `pg_cron` extension and schedule the job `evenpot-materialise-recurring`
+  (05:00 UTC every day) when your project's plan offers the extension. If it is
+  not offered, or anything about enabling or scheduling it fails, the migration
+  skips this step without an error and the rest of the setup is unaffected.
+  To see whether the job exists, run `select jobname, schedule from cron.job;` in
+  the SQL Editor (an error that `cron` does not exist means it was skipped).
+- **Without the job**, due items are created when someone opens the app: the
+  app asks the server to create them (`materialise_my_recurring`), which ships
+  with the recurring-transactions screens. A repeating expense then appears the
+  next time anyone in the group opens the app, dated on its true date.
 
-Without the job, a repeating expense appears the next time anyone in the group
-opens the app, dated on its true date.
+If you enable the extension in the Supabase dashboard's extensions page after
+the migrations have run, the migration will not run again; create the job once
+in the SQL Editor:
+`select cron.schedule('evenpot-materialise-recurring', '0 5 * * *', $$select public._materialise_recurring()$$);`
 
 #### Daily exchange rates for repeating foreign-currency items (optional)
 

@@ -120,6 +120,29 @@ describe("SQL security guards", () => {
     );
   });
 
+  it("splits the activity feed from upcoming expenses under the same guards", () => {
+    const functions = readSchema("04_functions.sql");
+    const recent = functionBody(functions, "get_recent_activity");
+    const upcoming = functionBody(functions, "get_upcoming_expenses");
+
+    expect(recent).toMatch(/and e\.date <= now\(\)/i);
+    expect(upcoming).toMatch(/raise exception 'Not authenticated'/i);
+    expect(upcoming).toMatch(/public\.is_group_member\(e\.group_id, v_uid\)/i);
+    expect(upcoming).toMatch(/and e\.date > now\(\)/i);
+    expect(upcoming).toMatch(/e\.paid_by = v_uid/i);
+    expect(upcoming).toMatch(/es\.user_id = v_uid\s+and es\.amount > 0/i);
+    expect(upcoming).toMatch(/order by e\.date asc/i);
+    expect(upcoming.indexOf("limit greatest")).toBeGreaterThan(
+      upcoming.indexOf("es.user_id = v_uid")
+    );
+    expect(functions).toMatch(
+      /function public\.get_upcoming_expenses\([^)]*\)[\s\S]*?security definer\s+set search_path = public, pg_temp/i
+    );
+    // Same execute grants as get_recent_activity: neither is revoked or
+    // granted explicitly, both keep the defaults.
+    expect(functions).not.toMatch(/(grant|revoke)[^;]*get_(upcoming_expenses|recent_activity)/i);
+  });
+
   it("pins search_path on every SECURITY DEFINER function", () => {
     const functions = readSchema("04_functions.sql");
     const lines = functions.split("\n");
@@ -546,5 +569,31 @@ describe("SQL security guards", () => {
       expect(body).toMatch(/raise exception 'Not authenticated'/i);
       expect(body).toMatch(/v_uid <> v_lo and v_uid <> v_hi/i);
     }
+  });
+
+  it("guards the recurring schedule RPCs on the caller, not on a parameter", () => {
+    const functions = readSchema("04_functions.sql");
+
+    const create = functionBody(functions, "create_recurring_schedule");
+    expect(create).toMatch(/raise exception 'Not authenticated'/i);
+    expect(create).toMatch(/public\.is_group_member\(p_group_id, v_uid\)/i);
+    expect(create).toMatch(/owner_id = v_uid and contact_user_id = p_contact_id/i);
+    expect(create).toMatch(/_insert_group_expense\(\s*v_uid,/i);
+    expect(create).toMatch(/_insert_contact_expense\(\s*v_uid,/i);
+    expect(create).toMatch(/created_by[\s\S]*?values \([\s\S]*?v_uid/i);
+
+    const stop = functionBody(functions, "stop_recurring_schedule");
+    expect(stop).toMatch(/raise exception 'Not authenticated'/i);
+    expect(stop).toMatch(/public\.is_group_member\(v_schedule\.group_id, v_uid\)/i);
+    expect(stop).toMatch(/v_uid <> v_schedule\.user_lo and v_uid <> v_schedule\.user_hi/i);
+    expect(stop).toMatch(/for update/i);
+
+    // leave_group keeps both refusals in one definition.
+    const leave = functionBody(functions, "leave_group");
+    expect(leave).toMatch(/e\.date > now\(\)/i);
+    expect(leave).toMatch(/py\.date > now\(\)/i);
+    expect(leave).toMatch(/from public\.recurring_schedules s[\s\S]*?s\.stopped_at is null/i);
+    expect(leave).toMatch(/s\.created_by = v_uid/i);
+    expect(leave).toMatch(/s\.paid_by = v_uid/i);
   });
 });

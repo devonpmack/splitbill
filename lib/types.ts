@@ -137,6 +137,7 @@ export interface Database {
           currency: string;
           exchange_rate: number;
           base_amount: number;
+          date: string;
         };
         Insert: {
           id?: string;
@@ -148,6 +149,7 @@ export interface Database {
           currency?: string;
           exchange_rate?: number;
           base_amount?: number;
+          date?: string;
         };
         Update: {
           paid_by?: string;
@@ -157,6 +159,7 @@ export interface Database {
           currency?: string;
           exchange_rate?: number;
           base_amount?: number;
+          date?: string;
         };
         Relationships: [];
       };
@@ -251,6 +254,7 @@ export interface Database {
           currency: string;
           exchange_rate: number;
           base_amount: number;
+          date: string;
         };
         Insert: {
           id?: string;
@@ -263,6 +267,7 @@ export interface Database {
           currency?: string;
           exchange_rate?: number;
           base_amount?: number;
+          date?: string;
         };
         Update: {
           paid_by?: string;
@@ -272,6 +277,7 @@ export interface Database {
           currency?: string;
           exchange_rate?: number;
           base_amount?: number;
+          date?: string;
         };
         Relationships: [];
       };
@@ -566,6 +572,7 @@ export interface Database {
           p_amount: number;
           p_note?: string | null;
           p_currency?: string | null;
+          p_date?: string | null;
         };
         Returns: Database["public"]["Tables"]["payments"]["Row"];
       };
@@ -576,6 +583,7 @@ export interface Database {
           p_paid_to: string;
           p_amount: number;
           p_note?: string | null;
+          p_date?: string | null;
         };
         Returns: Database["public"]["Tables"]["payments"]["Row"];
       };
@@ -595,6 +603,7 @@ export interface Database {
           p_amount: number;
           p_note?: string | null;
           p_currency?: string | null;
+          p_date?: string | null;
         };
         Returns: Database["public"]["Tables"]["contact_payments"]["Row"];
       };
@@ -605,6 +614,7 @@ export interface Database {
           p_paid_to: string;
           p_amount: number;
           p_note?: string | null;
+          p_date?: string | null;
         };
         Returns: Database["public"]["Tables"]["contact_payments"]["Row"];
       };
