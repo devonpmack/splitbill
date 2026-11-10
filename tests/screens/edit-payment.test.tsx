@@ -79,6 +79,34 @@ describe("EditPayment screen", () => {
     await waitFor(() => expect(mockBack).toHaveBeenCalled());
   });
 
+  it("keeps a member who deleted their account, by name (settlements to or from them are allowed)", async () => {
+    (useGroup as jest.Mock).mockReturnValue({
+      data: {
+        ...group,
+        group_members: [
+          ...group.group_members,
+          {
+            user_id: "u3",
+            profiles: { full_name: "Deleted user", deleted_at: "2026-11-01T00:00:00Z" },
+          },
+        ],
+      },
+    });
+    (useGroupPayments as jest.Mock).mockReturnValue({
+      data: [{ ...payment, paid_to: "u3" }],
+    });
+    await renderWithPaper(<EditPayment />);
+
+    expect(screen.getByDisplayValue("Deleted user")).toBeTruthy();
+    await fireEvent.press(screen.getByText("Save Changes"));
+
+    await waitFor(() =>
+      expect(mockMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ paidBy: "u1", paidTo: "u3" })
+      )
+    );
+  });
+
   describe("date", () => {
     beforeEach(() => freezeNow(new Date(2026, 10, 9, 15, 0)));
     afterEach(() => jest.useRealTimers());

@@ -18,6 +18,7 @@ export function EmptyState({ icon, title, subtitle }: EmptyStateProps) {
         alignItems: "center",
         justifyContent: "center",
         paddingVertical: 80,
+        paddingHorizontal: 24,
       }}
     >
       {icon && (
@@ -40,7 +41,11 @@ export function EmptyState({ icon, title, subtitle }: EmptyStateProps) {
       {subtitle && (
         <Text
           variant="bodySmall"
-          style={{ color: theme.colors.onSurfaceVariant, marginTop: 4 }}
+          style={{
+            color: theme.colors.onSurfaceVariant,
+            marginTop: 4,
+            textAlign: "center",
+          }}
         >
           {subtitle}
         </Text>

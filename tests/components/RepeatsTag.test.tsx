@@ -38,7 +38,13 @@ function expense(over: Partial<ExpenseWithSplits> = {}): ExpenseWithSplits {
     schedule_id: null,
     occurrence_date: null,
     hand_edited: false,
-    payer: { id: "u1", full_name: "Me", avatar_url: null, created_at: "" },
+    payer: {
+      id: "u1",
+      full_name: "Me",
+      avatar_url: null,
+      created_at: "",
+      deleted_at: null,
+    },
     expense_splits: [],
     ...over,
   };

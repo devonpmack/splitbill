@@ -56,7 +56,46 @@ describe("useContacts", () => {
         avatar_url: null,
         balance: 12.5,
         is_accepted: true,
+        deleted_at: null,
       },
+    ]);
+  });
+
+  it("carries the contact's deleted_at, and treats a missing key as not deleted", async () => {
+    mockedSupabase.rpc.mockResolvedValue({
+      data: [
+        {
+          contact_user_id: "user-2",
+          full_name: "Deleted user",
+          avatar_url: null,
+          currency: "USD",
+          balance: "5",
+          is_accepted: true,
+          contact_deleted_at: "2026-11-01T00:00:00Z",
+        },
+        {
+          // A database that predates the column returns no such key.
+          contact_user_id: "user-3",
+          full_name: "Cara",
+          avatar_url: null,
+          currency: "USD",
+          balance: "1",
+          is_accepted: true,
+        },
+      ],
+      error: null,
+    });
+
+    const { result } = await renderHook(() => useContacts(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(
+      result.current.data?.map((c) => [c.contact_user_id, c.deleted_at])
+    ).toEqual([
+      ["user-2", "2026-11-01T00:00:00Z"],
+      ["user-3", null],
     ]);
   });
 

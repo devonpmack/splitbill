@@ -30,6 +30,9 @@ export interface Database {
           full_name: string;
           avatar_url: string | null;
           created_at: string;
+          // Set when the person deleted their account (the profile row stays so
+          // shared expenses still add up).
+          deleted_at: string | null;
         };
         Insert: {
           id: string;
@@ -662,6 +665,9 @@ export interface Database {
           currency: string;
           balance: number;
           is_accepted: boolean;
+          // The contact's profiles.deleted_at; null while they still have an
+          // account. Absent on a database that predates the column.
+          contact_deleted_at?: string | null;
         }[];
       };
       get_contact_group_breakdown: {
@@ -771,6 +777,9 @@ export interface ContactWithBalance {
   // exchange rate, so the combined balance is genuinely unknown.
   balance: number | null;
   is_accepted: boolean;
+  // Set when the contact deleted their account: they stay in the list for the
+  // balance they left, but no new expense can be added with them.
+  deleted_at: string | null;
 }
 
 export interface ContactExpenseWithSplits extends ContactExpense {
@@ -866,7 +875,7 @@ export interface BalanceBreakdown {
 // name the joined profile carries.
 export interface MemberWithProfile {
   user_id: string;
-  profiles?: { full_name?: string | null } | null;
+  profiles?: { full_name?: string | null; deleted_at?: string | null } | null;
 }
 
 // Flattened read shapes for the global Activity feed. Each mirrors the columns

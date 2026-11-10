@@ -6,10 +6,13 @@ import { ContactAddExpenseScreen as AddContactExpense } from "@/components/conta
 const mockBack = jest.fn();
 const mockMutateAsync = jest.fn();
 const mockShowError = jest.fn();
+const mockParams: { contactUserId: string; expenseId?: string } = {
+  contactUserId: "user-2",
+};
 
 jest.mock("expo-router", () => ({
   router: { back: jest.fn() },
-  useLocalSearchParams: () => ({ contactUserId: "user-2" }),
+  useLocalSearchParams: () => mockParams,
   Stack: { Screen: () => null },
 }));
 jest.mock("@/lib/auth", () => ({ useAuth: jest.fn() }));
@@ -52,6 +55,7 @@ import { useSnackbar } from "@/lib/snackbar";
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockParams.expenseId = undefined;
   mockMutateAsync.mockResolvedValue({ id: "ce-1" });
   (router as unknown as { back: jest.Mock }).back = mockBack;
   (useAuth as jest.Mock).mockReturnValue({ user: { id: "user-1" } });
@@ -79,6 +83,57 @@ describe("AddContactExpense screen", () => {
 
     expect(mockShowError).toHaveBeenCalledWith("Please enter a description");
     expect(mockMutateAsync).not.toHaveBeenCalled();
+  });
+
+  describe("a contact who deleted their account", () => {
+    beforeEach(() => {
+      (useContacts as jest.Mock).mockReturnValue({
+        data: [
+          {
+            contact_user_id: "user-2",
+            full_name: "Deleted user",
+            balance: 5,
+            deleted_at: "2026-11-01T00:00:00Z",
+          },
+        ],
+      });
+    });
+
+    it("says a new expense can't be added instead of showing the form", async () => {
+      await renderWithPaper(<AddContactExpense />);
+
+      expect(
+        screen.getByText("You can't add new expenses with someone who deleted their account")
+      ).toBeTruthy();
+      expect(screen.queryByPlaceholderText("What was this expense for?")).toBeNull();
+      expect(screen.queryByText("Add Expense")).toBeNull();
+    });
+
+    it("still lets an existing expense with them be edited", async () => {
+      mockParams.expenseId = "ce-1";
+      (useContactExpenses as jest.Mock).mockReturnValue({
+        data: [
+          {
+            id: "ce-1",
+            description: "Old coffee",
+            amount: 8,
+            paid_by: "user-1",
+            split_type: "equal",
+            currency: "USD",
+            expense_splits: [
+              { user_id: "user-1", amount: 4 },
+              { user_id: "user-2", amount: 4 },
+            ],
+          },
+        ],
+      });
+      await renderWithPaper(<AddContactExpense />);
+
+      expect(screen.getByText("Save Changes")).toBeTruthy();
+      expect(
+        screen.queryByText("You can't add new expenses with someone who deleted their account")
+      ).toBeNull();
+    });
   });
 
   describe("date", () => {
