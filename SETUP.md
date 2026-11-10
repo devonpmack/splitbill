@@ -120,6 +120,39 @@ due. Two things create them, and either alone is enough:
 Without the job, a repeating expense appears the next time anyone in the group
 opens the app, dated on its true date.
 
+#### Daily exchange rates for repeating foreign-currency items (optional)
+
+A repeating expense in a currency other than the group's (or the contact pair's)
+converts each time it is created. If the database holds recent rates it uses
+them; otherwise it uses the last rate it converted at (the rate from when you
+created the schedule, to begin with). The rates come from the same source the
+app uses (`open.er-api.com`, USD-based) and are fetched once a day by two
+scheduled jobs, which need **both** the `pg_cron` and `pg_net` extensions. If
+your project offers them, enable both in *Database → Extensions* before running
+the migrations; `20261109203000_exchange_rates.sql` then schedules
+`evenpot-exchange-rates-fire` (04:50 UTC, asks for the rates) and
+`evenpot-exchange-rates-store` (04:55 UTC, checks and saves them), ahead of the
+05:00 job above. If either extension is off, that part of the migration does
+nothing and is not an error. If you enable them after the migrations have run,
+create the jobs once in *SQL Editor*:
+
+```sql
+select cron.schedule('evenpot-exchange-rates-fire', '50 4 * * *', $$select public._refresh_exchange_rates_fire()$$);
+select cron.schedule('evenpot-exchange-rates-store', '55 4 * * *', $$select public._refresh_exchange_rates_store()$$);
+```
+
+A saved day is used for up to 7 days. A response that is not a success, has a
+rate that is not a positive number, or moves any currency by more than 50 %
+from the previous day is thrown away and the earlier rates stay. To check it,
+run `select jobname, schedule from cron.job;` and, the morning after,
+`select day, fetched_at from public.exchange_rates order by day desc limit 3;`.
+To try it now, run `select public._refresh_exchange_rates_fire();`, wait a few
+seconds, then `select public._refresh_exchange_rates_store();`, which answers
+`stored` or says why it did not.
+
+Without them, repeating foreign-currency items keep converting at the last known
+rate, and the app-open catch-up above still works.
+
 ## 5. Give the app the project URL and key
 
 ```bash
