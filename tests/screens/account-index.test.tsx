@@ -50,6 +50,14 @@ describe("Account screen", () => {
     expect(mockPush).toHaveBeenCalledWith("/(tabs)/account/help");
   });
 
+  it("navigates to the delete-account screen", async () => {
+    await renderWithPaper(<Account />);
+
+    await fireEvent.press(screen.getByText("Delete Account"));
+
+    expect(mockPush).toHaveBeenCalledWith("/(tabs)/account/delete-account");
+  });
+
   it("confirms before signing out, wiring signOut as the callback", async () => {
     await renderWithPaper(<Account />);
 

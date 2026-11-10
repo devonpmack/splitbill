@@ -102,6 +102,16 @@ export default function Account() {
             onPress={handleSignOut}
           />
         </Card>
+
+        <Card mode="contained" style={{ marginTop: 16, marginBottom: 32 }}>
+          <SettingsLinkRow
+            title="Delete Account"
+            icon="delete-outline"
+            color={theme.colors.error}
+            showChevron={false}
+            onPress={() => router.push("/(tabs)/account/delete-account")}
+          />
+        </Card>
       </View>
 
     </ScrollView>
