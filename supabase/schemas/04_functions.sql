@@ -311,7 +311,7 @@ begin
 end;
 $$;
 
--- Which of the given emails have an Evenpot account.
+-- Which of the given emails have an account.
 --
 -- Returns the emails only, never user ids. The client needs the "no account
 -- for x@y.com" message when inviting someone, but handing back a stable uuid
@@ -713,7 +713,7 @@ begin
   );
 
   if coalesce(array_length(v_missing, 1), 0) > 0 then
-    raise exception 'No Evenpot account found for: %',
+    raise exception 'No account found for: %',
       array_to_string(v_missing, ', ');
   end if;
 
@@ -789,7 +789,7 @@ begin
   );
 
   if coalesce(array_length(v_missing, 1), 0) > 0 then
-    raise exception 'No Evenpot account found for: %',
+    raise exception 'No account found for: %',
       array_to_string(v_missing, ', ');
   end if;
 
@@ -1306,7 +1306,7 @@ begin
   where lower(au.email) = v_email;
 
   if v_recipient is null then
-    raise exception 'No Evenpot account found for %', v_email;
+    raise exception 'No account found for %', v_email;
   end if;
 
   if v_recipient = v_uid then
