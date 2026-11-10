@@ -35,7 +35,7 @@ Splitfox has no advertising, no analytics, no crash-reporting service and no pus
 - **Your contacts, and anyone you have a one-to-one expense or payment with,** can see your name and the expenses and payments between the two of you.
 - **If you leave a group,** the expenses and payments you already added stay in that group, with your name, for the people who are still in it.
 - **Nobody sees your email address through the app.** It is not shown to other users.
-- **Anyone with an Splitfox account can check whether an email address has an account.** If they then send a contact request to it, they will see the name on that account.
+- **Anyone with a Splitfox account can check whether an email address has an account.** If they then send a contact request to it, they will see the name on that account.
 - **A group member can add any registered person to a group without that person accepting first.** The person added can then see that group's data, and can leave once they have no unsettled balance.
 
 ## Service providers

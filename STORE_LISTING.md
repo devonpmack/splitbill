@@ -16,7 +16,7 @@ Splitfox: Split Bills
 Split bills with friends and groups. Free, with no ads and no limits.
 ```
 
-68 characters.
+69 characters.
 
 ## Full description (4,000 characters max)
 
@@ -36,7 +36,7 @@ Know who owes what
 - Record a payment when someone settles up, and balances update right away
 
 Groups and friends
-- Make a group for a trip, a household or a night out and add people by their email (they need an Splitfox account)
+- Make a group for a trip, a household or a night out and add people by their email (they need a Splitfox account)
 - Keep a list of friends for the one-off expenses that do not belong to a group
 - An activity feed shows what changed and when
 
