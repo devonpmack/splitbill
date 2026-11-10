@@ -739,11 +739,13 @@ begin
     raise exception 'Expense payer must be a group member';
   end if;
 
-  if p_amount <= 0 then
+  if p_amount <= 0
+    or p_amount in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) then
     raise exception 'Expense amount must be greater than zero';
   end if;
 
-  if v_rate <= 0 then
+  if v_rate <= 0
+    or v_rate in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) then
     raise exception 'Exchange rate must be greater than zero';
   end if;
 
@@ -756,6 +758,10 @@ begin
   for v_split in select value from jsonb_array_elements(coalesce(p_splits, '[]'::jsonb))
   loop
     v_split_user := (v_split->>'userId')::uuid;
+    if (v_split->>'amount')::numeric in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
+      or (v_split->>'baseAmount')::numeric in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) then
+      raise exception 'Split amount cannot be negative';
+    end if;
     v_split_amount := round((v_split->>'amount')::numeric, 2);
     v_split_base := round(
       coalesce((v_split->>'baseAmount')::numeric, (v_split->>'amount')::numeric * v_rate), 2
@@ -928,11 +934,13 @@ begin
     raise exception 'Expense payer must be a group member';
   end if;
 
-  if p_amount <= 0 then
+  if p_amount <= 0
+    or p_amount in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) then
     raise exception 'Expense amount must be greater than zero';
   end if;
 
-  if v_rate <= 0 then
+  if v_rate <= 0
+    or v_rate in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) then
     raise exception 'Exchange rate must be greater than zero';
   end if;
 
@@ -945,6 +953,10 @@ begin
   for v_split in select value from jsonb_array_elements(coalesce(p_splits, '[]'::jsonb))
   loop
     v_split_user := (v_split->>'userId')::uuid;
+    if (v_split->>'amount')::numeric in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
+      or (v_split->>'baseAmount')::numeric in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) then
+      raise exception 'Split amount cannot be negative';
+    end if;
     v_split_amount := round((v_split->>'amount')::numeric, 2);
     v_split_base := round(
       coalesce((v_split->>'baseAmount')::numeric, (v_split->>'amount')::numeric * v_rate), 2
@@ -1321,11 +1333,13 @@ begin
     raise exception 'Expense payer must be you or the contact';
   end if;
 
-  if p_amount <= 0 then
+  if p_amount <= 0
+    or p_amount in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) then
     raise exception 'Expense amount must be greater than zero';
   end if;
 
-  if v_rate <= 0 then
+  if v_rate <= 0
+    or v_rate in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) then
     raise exception 'Exchange rate must be greater than zero';
   end if;
 
@@ -1346,6 +1360,10 @@ begin
   for v_split in select value from jsonb_array_elements(coalesce(p_splits, '[]'::jsonb))
   loop
     v_split_user := (v_split->>'userId')::uuid;
+    if (v_split->>'amount')::numeric in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
+      or (v_split->>'baseAmount')::numeric in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) then
+      raise exception 'Split amount cannot be negative';
+    end if;
     v_split_amount := round((v_split->>'amount')::numeric, 2);
     v_split_base := round(
       coalesce((v_split->>'baseAmount')::numeric, (v_split->>'amount')::numeric * v_rate), 2
@@ -1522,11 +1540,13 @@ begin
     raise exception 'Expense payer must be a participant';
   end if;
 
-  if p_amount <= 0 then
+  if p_amount <= 0
+    or p_amount in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) then
     raise exception 'Expense amount must be greater than zero';
   end if;
 
-  if v_rate <= 0 then
+  if v_rate <= 0
+    or v_rate in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) then
     raise exception 'Exchange rate must be greater than zero';
   end if;
 
@@ -1539,6 +1559,10 @@ begin
   for v_split in select value from jsonb_array_elements(coalesce(p_splits, '[]'::jsonb))
   loop
     v_split_user := (v_split->>'userId')::uuid;
+    if (v_split->>'amount')::numeric in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
+      or (v_split->>'baseAmount')::numeric in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) then
+      raise exception 'Split amount cannot be negative';
+    end if;
     v_split_amount := round((v_split->>'amount')::numeric, 2);
     v_split_base := round(
       coalesce((v_split->>'baseAmount')::numeric, (v_split->>'amount')::numeric * v_rate), 2
@@ -2410,7 +2434,8 @@ begin
     raise exception 'Payer and recipient must be different people';
   end if;
 
-  if p_amount is null or p_amount <= 0 then
+  if p_amount is null or p_amount <= 0
+    or p_amount in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) then
     raise exception 'Payment amount must be greater than zero';
   end if;
 
@@ -2486,7 +2511,8 @@ begin
     raise exception 'Payer and recipient must be different people';
   end if;
 
-  if p_amount is null or p_amount <= 0 then
+  if p_amount is null or p_amount <= 0
+    or p_amount in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) then
     raise exception 'Payment amount must be greater than zero';
   end if;
 
@@ -2617,7 +2643,8 @@ begin
     raise exception 'A payment must be between you and the contact';
   end if;
 
-  if p_amount is null or p_amount <= 0 then
+  if p_amount is null or p_amount <= 0
+    or p_amount in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) then
     raise exception 'Payment amount must be greater than zero';
   end if;
 
@@ -2696,7 +2723,8 @@ begin
     raise exception 'A payment must be between the two participants';
   end if;
 
-  if p_amount is null or p_amount <= 0 then
+  if p_amount is null or p_amount <= 0
+    or p_amount in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) then
     raise exception 'Payment amount must be greater than zero';
   end if;
 
