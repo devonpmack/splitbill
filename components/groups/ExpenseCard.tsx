@@ -2,6 +2,7 @@ import { View } from "react-native";
 import { Card, IconButton, Text } from "react-native-paper";
 import { formatCurrency } from "@/lib/utils";
 import { useAppTheme } from "@/lib/theme";
+import { UpcomingTag } from "@/components/UpcomingTag";
 import type { ContactExpenseWithSplits, ExpenseWithSplits } from "@/lib/types";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
@@ -10,6 +11,7 @@ type ExpenseCardProps = {
   currentUserId?: string;
   onDelete: (expenseId: string) => void;
   onEdit?: (expenseId: string) => void;
+  upcoming?: boolean;
 };
 
 export function ExpenseCard({
@@ -17,6 +19,7 @@ export function ExpenseCard({
   currentUserId,
   onDelete,
   onEdit,
+  upcoming,
 }: ExpenseCardProps) {
   const theme = useAppTheme();
   const isPayer = expense.paid_by === currentUserId;
@@ -91,6 +94,11 @@ export function ExpenseCard({
               >
                 {payerName} paid {formatCurrency(expense.amount, expense.currency)}
               </Text>
+              {upcoming ? (
+                <View style={{ marginTop: 4 }}>
+                  <UpcomingTag />
+                </View>
+              ) : null}
             </View>
           </View>
           <View style={{ flexDirection: "row", alignItems: "center" }}>

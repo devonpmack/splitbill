@@ -2,6 +2,8 @@ import { View } from "react-native";
 import { Card, IconButton, Text } from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAppTheme } from "@/lib/theme";
+import { formatDay } from "@/lib/dates";
+import { UpcomingTag } from "@/components/UpcomingTag";
 import type { ComponentProps } from "react";
 
 type IconName = ComponentProps<typeof MaterialCommunityIcons>["name"];
@@ -25,6 +27,8 @@ type ActivityRowProps = {
   onPress: () => void;
   trailing?: ActivityRowTrailing;
   edit?: { label: string; onPress: () => void };
+  // Dated in the future: tagged, and the footer says when it starts counting.
+  upcoming?: boolean;
 };
 
 export function ActivityRow({
@@ -37,6 +41,7 @@ export function ActivityRow({
   onPress,
   trailing,
   edit,
+  upcoming,
 }: ActivityRowProps) {
   const theme = useAppTheme();
   const isSecondary = tone === "secondary";
@@ -113,9 +118,21 @@ export function ActivityRow({
           </Text>
         ) : null}
 
-        <Text variant="labelSmall" style={{ color: onTone, marginTop: 8 }}>
-          {new Date(date).toLocaleDateString()}
-        </Text>
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 8,
+            marginTop: 8,
+          }}
+        >
+          {upcoming ? <UpcomingTag /> : null}
+          <Text variant="labelSmall" style={{ color: onTone }}>
+            {upcoming
+              ? `Counts from ${formatDay(date)}`
+              : new Date(date).toLocaleDateString()}
+          </Text>
+        </View>
       </Card.Content>
     </Card>
   );

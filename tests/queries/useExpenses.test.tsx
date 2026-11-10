@@ -1,5 +1,6 @@
 import { renderHook, waitFor } from "@testing-library/react-native";
-import { QueryClient } from "@tanstack/react-query";
+import React from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { actAsync, createWrapper, queryBuilder } from "../helpers/testUtils";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
@@ -8,6 +9,7 @@ import {
   useDeleteExpense,
   useExpenses,
   useRecentActivity,
+  useUpcomingActivity,
   useUpdateExpense,
 } from "@/lib/queries/useExpenses";
 
@@ -57,6 +59,56 @@ describe("useRecentActivity", () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.error).toEqual(new Error("boom"));
+  });
+});
+
+describe("useUpcomingActivity", () => {
+  it("fetches the caller's future-dated expenses through the RPC", async () => {
+    const rows = [{ id: "exp-2", description: "Rent" }];
+    mockedSupabase.rpc.mockResolvedValue({ data: rows, error: null });
+
+    const { result } = await renderHook(() => useUpcomingActivity(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual(rows);
+    expect(mockedSupabase.rpc).toHaveBeenCalledWith("get_upcoming_expenses", {
+      p_limit: 50,
+    });
+  });
+
+  it("is refetched by the ['activity'] invalidation every write already issues", async () => {
+    mockedSupabase.rpc.mockResolvedValue({ data: [], error: null });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+
+    const { result } = await renderHook(() => useUpcomingActivity(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockedSupabase.rpc).toHaveBeenCalledTimes(1);
+
+    await actAsync(async () => {
+      await queryClient.invalidateQueries({ queryKey: ["activity"] });
+    });
+
+    expect(mockedSupabase.rpc).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces query errors", async () => {
+    mockedSupabase.rpc.mockResolvedValue({
+      data: null,
+      error: new Error("boom"),
+    });
+
+    const { result } = await renderHook(() => useUpcomingActivity(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
   });
 });
 

@@ -27,7 +27,8 @@ import { useDisplayCurrency } from "@/lib/display-currency";
 import { useSnackbar } from "@/lib/snackbar";
 import { useConfirm } from "@/lib/confirm";
 import { useAppTheme } from "@/lib/theme";
-import { ActivityList, type ActivityListItem } from "@/components/ActivityList";
+import { useNow } from "@/lib/useNow";
+import { ActivityList, splitActivityListItems } from "@/components/ActivityList";
 import { DualActionBar } from "@/components/DualActionBar";
 import { EmptyState } from "@/components/EmptyState";
 import { ContactGroupBreakdownList } from "@/components/contacts/ContactGroupBreakdownList";
@@ -110,23 +111,20 @@ export function ContactDetailScreen({
   const groups = groupBreakdown ?? [];
   const hasGroups = groups.length > 0;
 
-  const activityItems: ActivityListItem[] = [
-    ...(expenses ?? []).map(
-      (expense): ActivityListItem => ({
-        kind: "expense",
-        ts: expense.date,
-        payload: expense,
-      })
-    ),
-    ...(payments ?? []).map(
-      (payment): ActivityListItem => ({
-        kind: "payment",
-        ts: payment.date,
-        payload: payment,
-      })
-    ),
-  ].sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime());
-  const hasActivity = activityItems.length > 0;
+  // A date arriving changes what the server counts, so the timer refetches the
+  // balance too; the rows move out of Upcoming as `now` advances.
+  const now = useNow(
+    [...(expenses ?? []), ...(payments ?? [])].map((row) => row.date),
+    () => {
+      refetchBalance();
+      refetchExpenses();
+      refetchPayments();
+      refetchGroupBreakdown();
+    }
+  );
+  const { upcoming: upcomingItems, past: activityItems } =
+    splitActivityListItems(expenses ?? [], payments ?? [], now);
+  const hasActivity = activityItems.length > 0 || upcomingItems.length > 0;
 
   const handleDeleteExpense = (expenseId: string) => {
     confirm({
@@ -218,6 +216,7 @@ export function ContactDetailScreen({
 
           <ActivityList
             items={activityItems}
+            upcomingItems={upcomingItems}
             title={hasGroups ? "One-on-one" : undefined}
             currentUserId={user?.id}
             onDeleteExpense={handleDeleteExpense}

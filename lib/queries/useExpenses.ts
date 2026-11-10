@@ -32,6 +32,25 @@ export function useRecentActivity() {
   });
 }
 
+// Future-dated expenses the caller is involved in, soonest first. The key sits
+// under ["activity"], so every activity invalidation covers it too.
+export function useUpcomingActivity() {
+  const { user } = useAuth();
+
+  return useQuery({
+    queryKey: ["activity", user?.id, "upcoming"],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("get_upcoming_expenses", {
+        p_limit: ACTIVITY_LIMIT,
+      });
+
+      if (error) throw error;
+      return (data ?? []) as unknown as ActivityExpense[];
+    },
+    enabled: !!user,
+  });
+}
+
 export function useExpenses(groupId: string) {
   return useQuery({
     queryKey: ["expenses", groupId],

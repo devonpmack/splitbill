@@ -4,6 +4,7 @@ import {
   getCurrencySymbol,
   type CurrencyCode,
 } from "./currency";
+import { partitionUpcoming } from "./upcoming";
 import type {
   ActivityContactExpense,
   ActivityContactPayment,
@@ -236,17 +237,36 @@ export function sortMembersSelfFirst<T extends MemberWithProfile>(
   });
 }
 
-// Merges the five activity queries into one newest-first feed. Each source is
-// tagged with the `kind` its card renders and the timestamp it sorts on.
-export function buildActivityFeed(sources: {
-  expenses?: ActivityExpense[];
-  payments?: ActivityPayment[];
-  contactExpenses?: ActivityContactExpense[];
-  contactPayments?: ActivityContactPayment[];
-  simplifyEvents?: ActivitySimplifyDebtsEvent[];
-}): ActivityFeedItem[] {
-  return sortByTimestampDesc<ActivityFeedItem>([
-    ...(sources.expenses ?? []).map((payload) => ({
+// Merges the activity queries into one feed. Each source is tagged with the
+// `kind` its card renders and the timestamp it sorts on. Rows dated after `now`
+// come back separately as `upcoming` (soonest first); `past` is newest first.
+// `get_recent_activity` leaves future expenses out, so they arrive through
+// `upcomingExpenses` (get_upcoming_expenses); both expense sources are
+// partitioned here so a row whose date passes since the fetch moves to `past`
+// without a refetch.
+export function buildActivityFeed(
+  sources: {
+    expenses?: ActivityExpense[];
+    upcomingExpenses?: ActivityExpense[];
+    payments?: ActivityPayment[];
+    contactExpenses?: ActivityContactExpense[];
+    contactPayments?: ActivityContactPayment[];
+    simplifyEvents?: ActivitySimplifyDebtsEvent[];
+  },
+  now: Date = new Date()
+): { upcoming: ActivityFeedItem[]; past: ActivityFeedItem[] } {
+  const expenseIds = new Set<string>();
+  const expenses = [
+    ...(sources.expenses ?? []),
+    ...(sources.upcomingExpenses ?? []),
+  ].filter((expense) => {
+    if (expenseIds.has(expense.id)) return false;
+    expenseIds.add(expense.id);
+    return true;
+  });
+
+  const items: ActivityFeedItem[] = [
+    ...expenses.map((payload) => ({
       kind: "expense" as const,
       id: payload.id,
       ts: payload.date,
@@ -276,5 +296,7 @@ export function buildActivityFeed(sources: {
       ts: payload.created_at,
       payload,
     })),
-  ]);
+  ];
+
+  return partitionUpcoming(items, (item) => item.ts, now);
 }

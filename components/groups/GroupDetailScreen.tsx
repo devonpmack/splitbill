@@ -16,14 +16,14 @@ import {
   getErrorMessage,
   memberDebtBreakdown,
   netDebtsByCounterparty,
-  sortByTimestampDesc,
   sortMembersSelfFirst,
 } from "@/lib/utils";
 import { useRealtimeSubscription } from "@/lib/realtime";
 import { useSnackbar } from "@/lib/snackbar";
 import { useConfirm } from "@/lib/confirm";
 import { useAppTheme } from "@/lib/theme";
-import { ActivityList, type ActivityListItem } from "@/components/ActivityList";
+import { useNow } from "@/lib/useNow";
+import { ActivityList, splitActivityListItems } from "@/components/ActivityList";
 import { DualActionBar } from "@/components/DualActionBar";
 import { GroupBalancesList } from "@/components/groups/GroupBalancesList";
 import { GroupHeaderActions } from "@/components/groups/GroupHeaderActions";
@@ -162,22 +162,20 @@ export function GroupDetailScreen({
     });
   };
 
-  const activityItems: ActivityListItem[] = sortByTimestampDesc([
-    ...(expenses ?? []).map(
-      (expense): ActivityListItem => ({
-        kind: "expense",
-        ts: expense.date,
-        payload: expense,
-      })
-    ),
-    ...(payments ?? []).map(
-      (payment): ActivityListItem => ({
-        kind: "payment",
-        ts: payment.date,
-        payload: payment,
-      })
-    ),
-  ]);
+  // A date arriving changes what the server counts, so the timer refetches the
+  // balances too; the rows move out of Upcoming as `now` advances.
+  const now = useNow(
+    [...(expenses ?? []), ...(payments ?? [])].map((row) => row.date),
+    () => {
+      refetchExpenses();
+      refetchPayments();
+      refetchBalances();
+      refetchRawDebts();
+      refetchSimplifiedDebts();
+    }
+  );
+  const { upcoming: upcomingItems, past: activityItems } =
+    splitActivityListItems(expenses ?? [], payments ?? [], now);
 
   const debts = simplify ? (simplifiedDebts ?? []) : (rawDebts ?? []);
 
@@ -256,6 +254,7 @@ export function GroupDetailScreen({
           {activeTab === "activity" ? (
             <ActivityList
               items={activityItems}
+              upcomingItems={upcomingItems}
               emptyState={{
                 icon: "timeline-text-outline",
                 title: "No activity yet",
