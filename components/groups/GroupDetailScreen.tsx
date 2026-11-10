@@ -19,7 +19,8 @@ import {
   sortMembersSelfFirst,
 } from "@/lib/utils";
 import { useRealtimeSubscription } from "@/lib/realtime";
-import { withSkipNote } from "@/lib/recurrence";
+import { hidesChip, withSkipNote } from "@/lib/recurrence";
+import { isUpcoming } from "@/lib/dates";
 import { useScheduleFrequencies } from "@/lib/queries/useRecurringSchedules";
 import { useSnackbar } from "@/lib/snackbar";
 import { useConfirm } from "@/lib/confirm";
@@ -120,9 +121,10 @@ export function GroupDetailScreen({
   ]);
 
   const handleDeleteExpense = (expenseId: string) => {
-    const scheduleId = expenses?.find((e) => e.id === expenseId)?.schedule_id;
+    const row = expenses?.find((e) => e.id === expenseId);
+    const schedule = row?.schedule_id ? schedules?.[row.schedule_id] : undefined;
     const isOccurrence =
-      !!scheduleId && schedules?.[scheduleId]?.stopped === false;
+      !!schedule && !hidesChip(schedule, isUpcoming(row?.date ?? ""));
     confirm({
       title: "Delete Expense",
       message: withSkipNote(

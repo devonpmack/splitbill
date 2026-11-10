@@ -4,6 +4,7 @@ import { formatCurrency } from "@/lib/utils";
 import { useAppTheme } from "@/lib/theme";
 import { UpcomingTag } from "@/components/UpcomingTag";
 import { RepeatsTag } from "@/components/RepeatsTag";
+import { useScheduleFrequencies } from "@/lib/queries/useRecurringSchedules";
 import { rowDay } from "@/lib/dates";
 import type { ContactExpenseWithSplits, ExpenseWithSplits } from "@/lib/types";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -42,10 +43,12 @@ export function ExpenseCard({
   const payerName = isPayer ? "You" : (expense.payer?.full_name ?? "Someone");
   const summaryLabel = isPayer ? "You lent" : "You borrowed";
 
+  const { data: schedules } = useScheduleFrequencies();
   const date = rowDay(
     expense.date,
     expense.occurrence_date,
-    expense.hand_edited
+    expense.hand_edited,
+    expense.schedule_id ? schedules?.[expense.schedule_id]?.tz : undefined
   );
   const monthDay = date.toLocaleDateString(undefined, {
     month: "short",
@@ -111,7 +114,10 @@ export function ExpenseCard({
                 >
                   {upcoming ? <UpcomingTag /> : null}
                   {expense.schedule_id ? (
-                    <RepeatsTag scheduleId={expense.schedule_id} />
+                    <RepeatsTag
+                      scheduleId={expense.schedule_id}
+                      upcoming={!!upcoming}
+                    />
                   ) : null}
                 </View>
               ) : null}

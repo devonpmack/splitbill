@@ -92,6 +92,7 @@ process.stdout.write(JSON.stringify({
   fromInstant: mod.exports.formatDay(instant),
   unmoved: mod.exports.formatDay(mod.exports.rowDay(instant, occurrenceDate, false)),
   moved: mod.exports.formatDay(mod.exports.rowDay(instant, occurrenceDate, true)),
+  editedOriginal: mod.exports.formatDay(mod.exports.rowDay(instant, occurrenceDate, true, "Pacific/Auckland")),
 }));
 `;
 
@@ -106,6 +107,7 @@ function viewIn(tz: string, occurrenceDate: string, instant: string) {
     fromInstant: string;
     unmoved: string;
     moved: string;
+    editedOriginal: string;
   };
 }
 
@@ -127,17 +129,17 @@ describe("formatCalendarDay across viewers", () => {
 });
 
 describe("rowDay across viewers", () => {
-  // Nov 11 occurrence moved by a member to Dec 1 00:00 in Auckland (UTC+13).
-  const instant = "2026-12-01T00:00:00+13:00";
-  const auckland = viewIn("Pacific/Auckland", "2026-11-11", instant);
-  const vancouver = viewIn("America/Vancouver", "2026-11-11", instant);
+  // The Dec 1 occurrence of an Auckland schedule starts at 00:00 NZDT.
+  const instant = "2026-11-30T11:00:00.000Z";
+  const auckland = viewIn("Pacific/Auckland", "2026-12-01", instant);
+  const vancouver = viewIn("America/Vancouver", "2026-12-01", instant);
 
-  it("an unmoved row shows the schedule's date to both viewers", () => {
-    expect(auckland.unmoved).toBe("Nov 11, 2026");
-    expect(vancouver.unmoved).toBe("Nov 11, 2026");
+  it("an edited row left where it was shows the schedule's date to every viewer", () => {
+    expect(auckland.editedOriginal).toBe("Dec 1, 2026");
+    expect(vancouver.editedOriginal).toBe("Dec 1, 2026");
   });
 
-  it("a moved row shows the instant's day in each viewer's own zone, as balances count it", () => {
+  it("a row edited with the schedule zone unknown shows the instant's day in each viewer's zone", () => {
     expect(auckland.moved).toBe("Dec 1, 2026");
     expect(vancouver.moved).toBe("Nov 30, 2026");
   });

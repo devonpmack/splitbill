@@ -2,6 +2,7 @@ import {
   buildRepeat,
   endSummary,
   frequencyLabel,
+  hidesChip,
   nextOccurrenceFrom,
   lastOccurrenceDate,
   MAX_REPEAT_COUNT,
@@ -76,32 +77,43 @@ describe("occurrenceDate", () => {
 });
 
 describe("nextOccurrenceFrom", () => {
-  const day = (y: number, m: number, d: number) => new Date(y, m - 1, d, 15);
+  // `now` is an instant; the schedule's own zone decides what day it is.
+  const at = (iso: string) => new Date(iso);
+  const TORONTO_NOON_NOV_9 = at("2026-11-09T17:00:00Z");
 
-  it("is the first occurrence on or after today, counted from the start date", () => {
-    expect(nextOccurrenceFrom(schedule(), day(2026, 2, 1))).toEqual({
+  it("is the first occurrence strictly after today in the schedule's zone", () => {
+    const monthly = schedule({ start_date: "2026-01-31" });
+    expect(nextOccurrenceFrom(monthly, at("2026-02-01T17:00:00Z"))).toEqual({
       index: 1,
       date: "2026-02-28",
     });
-    expect(nextOccurrenceFrom(schedule(), day(2026, 2, 28))).toEqual({
-      index: 1,
-      date: "2026-02-28",
-    });
-    expect(nextOccurrenceFrom(schedule(), day(2026, 3, 1))).toEqual({
+    // Today is an occurrence day: that one is already created, so Next is the one after.
+    expect(nextOccurrenceFrom(monthly, at("2026-02-28T17:00:00Z"))).toEqual({
       index: 2,
       date: "2026-03-31",
     });
   });
 
-  it("ignores the cursor: a daily series whose next days are already created shows today", () => {
+  it("monthly 'After 3' starting today: next is one month on and 2 are left", () => {
+    const counted = schedule({
+      start_date: "2026-11-09",
+      max_count: 3,
+      next_index: 1,
+    });
+    const next = nextOccurrenceFrom(counted, TORONTO_NOON_NOV_9);
+    expect(next).toEqual({ index: 1, date: "2026-12-09" });
+    expect(endSummary(counted, next)).toBe("2 left");
+  });
+
+  it("daily: tomorrow, whatever the cursor says", () => {
     const daily = schedule({
       frequency: "daily",
       start_date: "2026-11-07",
       next_index: 5,
     });
-    expect(nextOccurrenceFrom(daily, day(2026, 11, 9))).toEqual({
-      index: 2,
-      date: "2026-11-09",
+    expect(nextOccurrenceFrom(daily, TORONTO_NOON_NOV_9)).toEqual({
+      index: 3,
+      date: "2026-11-10",
     });
   });
 
@@ -109,35 +121,121 @@ describe("nextOccurrenceFrom", () => {
     expect(
       nextOccurrenceFrom(
         schedule({ start_date: "2026-12-01", next_index: 0 }),
-        day(2026, 11, 9)
+        TORONTO_NOON_NOV_9
       )
     ).toEqual({ index: 0, date: "2026-12-01" });
   });
 
-  it("is null once max_count occurrences are all in the past", () => {
-    const counted = schedule({ start_date: "2026-08-09", max_count: 3 });
-    expect(nextOccurrenceFrom(counted, day(2026, 10, 9))).toEqual({
-      index: 2,
-      date: "2026-10-09",
+  it("end date is inclusive", () => {
+    const ending = schedule({
+      frequency: "daily",
+      start_date: "2026-11-01",
+      end_date: "2026-11-10",
     });
-    expect(nextOccurrenceFrom(counted, day(2026, 10, 10))).toBeNull();
+    expect(nextOccurrenceFrom(ending, TORONTO_NOON_NOV_9)).toEqual({
+      index: 9,
+      date: "2026-11-10",
+    });
+    expect(
+      nextOccurrenceFrom(ending, at("2026-11-10T17:00:00Z"))
+    ).toBeNull();
   });
 
-  it("is null when the next date is after end_date, and on it when equal", () => {
-    const ending = schedule({ start_date: "2026-01-09", end_date: "2026-11-01" });
-    expect(nextOccurrenceFrom(ending, day(2026, 11, 9))).toBeNull();
-    expect(
-      nextOccurrenceFrom({ ...ending, end_date: "2026-11-09" }, day(2026, 11, 9))
-    ).toEqual({ index: 10, date: "2026-11-09" });
+  it("is null once every counted occurrence is today or earlier", () => {
+    const counted = schedule({ start_date: "2026-08-09", max_count: 4 });
+    expect(nextOccurrenceFrom(counted, at("2026-10-09T17:00:00Z"))).toEqual({
+      index: 3,
+      date: "2026-11-09",
+    });
+    expect(nextOccurrenceFrom(counted, TORONTO_NOON_NOV_9)).toBeNull();
+    expect(endSummary(counted, null)).toBe("0 left");
   });
 
   it("is null for a stopped schedule", () => {
     expect(
       nextOccurrenceFrom(
         schedule({ stopped_at: "2026-02-01T00:00:00Z" }),
-        day(2026, 2, 1)
+        TORONTO_NOON_NOV_9
       )
     ).toBeNull();
+  });
+
+  describe("uses the schedule's own zone, not the device's", () => {
+    // 2026-11-09 20:00Z: Nov 9 15:00 in Toronto, Nov 10 09:00 in Auckland.
+    const now = at("2026-11-09T20:00:00Z");
+    const daily = (tz: string) =>
+      schedule({ frequency: "daily", start_date: "2026-11-01", tz });
+
+    it("Toronto viewing an Auckland schedule: Auckland is already on Nov 10, so Next is Nov 11", () => {
+      expect(nextOccurrenceFrom(daily("Pacific/Auckland"), now)?.date).toBe(
+        "2026-11-11"
+      );
+    });
+
+    it("the same instant in a Toronto schedule: Next is Nov 10", () => {
+      expect(nextOccurrenceFrom(daily("America/Toronto"), now)?.date).toBe(
+        "2026-11-10"
+      );
+    });
+
+    it("Kiritimati viewing a Pago_Pago schedule: Pago_Pago is a day behind, so Next is the day after its today", () => {
+      // 2026-11-10 03:00Z: Nov 10 17:00 in Kiritimati (UTC+14), Nov 9 16:00 in Pago_Pago (UTC-11).
+      const instant = at("2026-11-10T03:00:00Z");
+      expect(nextOccurrenceFrom(daily("Pacific/Pago_Pago"), instant)?.date).toBe(
+        "2026-11-10"
+      );
+      expect(nextOccurrenceFrom(daily("Pacific/Kiritimati"), instant)?.date).toBe(
+        "2026-11-11"
+      );
+    });
+
+    it("does not depend on TZ of the test process", () => {
+      const before = process.env.TZ;
+      const results = ["UTC", "Pacific/Kiritimati", "America/Los_Angeles"].map(
+        (viewer) => {
+          process.env.TZ = viewer;
+          return nextOccurrenceFrom(daily("Pacific/Auckland"), now)?.date;
+        }
+      );
+      process.env.TZ = before;
+      expect(new Set(results)).toEqual(new Set(["2026-11-11"]));
+    });
+  });
+});
+
+describe("hidesChip", () => {
+  const summary = (over = {}) => ({
+    frequency: "monthly" as const,
+    tz: "UTC",
+    stopped: true,
+    stopReason: "stopped" as const,
+    ...over,
+  });
+
+  it.each(["stopped", "member left", "invalid"] as const)(
+    "hides the chip on an upcoming row of a schedule stopped for '%s'",
+    (stopReason) => {
+      expect(hidesChip(summary({ stopReason }), true)).toBe(true);
+    }
+  );
+
+  it("keeps the chip on a past row of the same schedule", () => {
+    expect(hidesChip(summary(), false)).toBe(false);
+  });
+
+  it("keeps the chip on every row of a completed schedule", () => {
+    const completed = summary({ stopReason: "completed" });
+    expect(hidesChip(completed, true)).toBe(false);
+    expect(hidesChip(completed, false)).toBe(false);
+  });
+
+  it("keeps the chip on an active schedule", () => {
+    const active = summary({ stopped: false, stopReason: null });
+    expect(hidesChip(active, true)).toBe(false);
+  });
+
+  it("does not judge a schedule that has not loaded", () => {
+    expect(hidesChip(undefined, true)).toBe(false);
   });
 });
 

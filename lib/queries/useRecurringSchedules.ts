@@ -4,8 +4,10 @@ import { supabase } from "../supabase";
 import type {
   RecurringFrequency,
   RecurringSchedule,
+  RecurringStopReason,
   SplitType,
 } from "../types";
+import type { ScheduleSummary } from "../recurrence";
 import { useAuth } from "../auth";
 import { getCurrencyDecimals } from "../currency";
 import { validateSplitsTotal } from "../utils";
@@ -51,14 +53,8 @@ export function useRecurringSchedules(scope: ScheduleScope) {
   });
 }
 
-export interface ScheduleSummary {
-  frequency: RecurringFrequency;
-  stopped: boolean;
-}
-
-// Every schedule the caller can see, by id (frequency and whether it has
-// stopped): what the "Repeats monthly" chip and
-// the skip note on a row need, whichever list the row appears in.
+// Every schedule the caller can see, by id: what a row needs to show its
+// "Repeats monthly" chip, its date and its delete note, whichever list it is in.
 export function useScheduleFrequencies() {
   const { user } = useAuth();
 
@@ -67,18 +63,25 @@ export function useScheduleFrequencies() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("recurring_schedules")
-        .select("id, frequency, stopped_at");
+        .select("id, frequency, tz, stopped_at, stop_reason");
 
       if (error) throw error;
       const rows = data as unknown as {
         id: string;
         frequency: RecurringFrequency;
+        tz: string;
         stopped_at: string | null;
+        stop_reason: RecurringStopReason | null;
       }[];
       return Object.fromEntries(
         rows.map((row): [string, ScheduleSummary] => [
           row.id,
-          { frequency: row.frequency, stopped: row.stopped_at !== null },
+          {
+            frequency: row.frequency,
+            tz: row.tz,
+            stopped: row.stopped_at !== null,
+            stopReason: row.stop_reason,
+          },
         ])
       );
     },

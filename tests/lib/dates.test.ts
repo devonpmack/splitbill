@@ -5,7 +5,9 @@ import {
   isRolledOverMDY,
   isUpcoming,
   parseCalendarDate,
+  calendarDayIn,
   rowDay,
+  startOfLocalDayInstant,
   pickedDateParam,
   startOfLocalDayISO,
   toLocalDateString,
@@ -140,8 +142,70 @@ describe("deviceTimeZone", () => {
   });
 });
 
+describe("startOfLocalDayInstant", () => {
+  const iso = (ms: number) => new Date(ms).toISOString();
+
+  it.each([
+    ["America/Toronto", "2026-11-09", "2026-11-09T05:00:00.000Z"],
+    ["America/Toronto", "2026-03-08", "2026-03-08T05:00:00.000Z"],
+    ["America/Toronto", "2026-03-09", "2026-03-09T04:00:00.000Z"],
+    ["America/Toronto", "2026-11-01", "2026-11-01T04:00:00.000Z"],
+    ["Pacific/Auckland", "2026-12-01", "2026-11-30T11:00:00.000Z"],
+    ["Pacific/Auckland", "2026-09-27", "2026-09-26T12:00:00.000Z"],
+    ["UTC", "2026-12-01", "2026-12-01T00:00:00.000Z"],
+    ["Pacific/Kiritimati", "2026-11-09", "2026-11-08T10:00:00.000Z"],
+    ["Pacific/Pago_Pago", "2026-11-09", "2026-11-09T11:00:00.000Z"],
+  ])("%s %s starts at %s", (tz, day, expected) => {
+    expect(iso(startOfLocalDayInstant(day, tz))).toBe(expected);
+  });
+
+  it("is the first instant when midnight does not exist (Havana spring forward, 01:00)", () => {
+    expect(iso(startOfLocalDayInstant("2026-03-08", "America/Havana"))).toBe(
+      "2026-03-08T05:00:00.000Z"
+    );
+    expect(iso(startOfLocalDayInstant("2026-03-09", "America/Havana"))).toBe(
+      "2026-03-09T04:00:00.000Z"
+    );
+  });
+
+  it("is the first of two 00:00s when the clocks fall back at 01:00 (Havana)", () => {
+    expect(iso(startOfLocalDayInstant("2026-11-01", "America/Havana"))).toBe(
+      "2026-11-01T04:00:00.000Z"
+    );
+  });
+
+  it.each([
+    ["Asia/Beirut", "2026-03-29", "2026-03-28T22:00:00.000Z"],
+    ["Africa/Cairo", "2026-04-24", "2026-04-23T22:00:00.000Z"],
+    ["America/Santiago", "2026-09-06", "2026-09-06T04:00:00.000Z"],
+  ])("is the first instant when %s skips midnight on %s", (tz, day, expected) => {
+    expect(iso(startOfLocalDayInstant(day, tz))).toBe(expected);
+  });
+
+  it("is the instant whose own day is the given day and the minute before is the day before", () => {
+    for (const tz of ["America/Toronto", "Pacific/Auckland", "America/Havana", "UTC"]) {
+      for (const day of ["2026-03-08", "2026-03-29", "2026-09-27", "2026-11-01", "2026-12-01"]) {
+        const ms = startOfLocalDayInstant(day, tz);
+        expect(calendarDayIn(new Date(ms), tz)).toBe(day);
+        expect(calendarDayIn(new Date(ms - 60_000), tz) < day).toBe(true);
+      }
+    }
+  });
+});
+
+describe("calendarDayIn", () => {
+  it("is the calendar day of an instant in a zone, not the device's", () => {
+    const instant = new Date("2026-11-09T20:00:00Z");
+    expect(calendarDayIn(instant, "America/Toronto")).toBe("2026-11-09");
+    expect(calendarDayIn(instant, "Pacific/Auckland")).toBe("2026-11-10");
+    expect(calendarDayIn(instant, "Pacific/Pago_Pago")).toBe("2026-11-09");
+    expect(calendarDayIn(instant, "Pacific/Kiritimati")).toBe("2026-11-10");
+  });
+});
+
 describe("rowDay", () => {
   const instant = new Date(2026, 10, 30, 9).toISOString();
+  const AKL_DEC_1 = "2026-11-30T11:00:00.000Z";
 
   it("is an ordinary row's instant, in the viewer's zone", () => {
     expect(rowDay(instant)).toEqual(new Date(instant));
@@ -152,7 +216,26 @@ describe("rowDay", () => {
     expect(rowDay(instant, "2026-11-11", false)).toEqual(new Date(2026, 10, 11));
   });
 
-  it("is the instant once a member has moved the occurrence", () => {
+  it("is the instant when an edited row's schedule zone is not known", () => {
     expect(rowDay(instant, "2026-11-11", true)).toEqual(new Date(instant));
+  });
+
+  it("is occurrence_date for an edited row that is still at its original instant", () => {
+    expect(rowDay(AKL_DEC_1, "2026-12-01", true, "Pacific/Auckland")).toEqual(
+      new Date(2026, 11, 1)
+    );
+  });
+
+  it("is the instant for an edited row that was moved off its original instant", () => {
+    const moved = "2026-12-05T05:00:00.000Z";
+    expect(rowDay(moved, "2026-12-01", true, "Pacific/Auckland")).toEqual(
+      new Date(moved)
+    );
+  });
+
+  it("an unedited row is never judged moved, whatever its instant", () => {
+    expect(rowDay("2026-12-05T05:00:00.000Z", "2026-12-01", false, "Pacific/Auckland")).toEqual(
+      new Date(2026, 11, 1)
+    );
   });
 });

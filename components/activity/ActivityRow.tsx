@@ -5,6 +5,7 @@ import { useAppTheme } from "@/lib/theme";
 import { formatDay, rowDay } from "@/lib/dates";
 import { UpcomingTag } from "@/components/UpcomingTag";
 import { RepeatsTag } from "@/components/RepeatsTag";
+import { useScheduleFrequencies } from "@/lib/queries/useRecurringSchedules";
 import type { ComponentProps } from "react";
 
 type IconName = ComponentProps<typeof MaterialCommunityIcons>["name"];
@@ -54,7 +55,13 @@ export function ActivityRow({
   handEdited,
 }: ActivityRowProps) {
   const theme = useAppTheme();
-  const day = rowDay(date, occurrenceDate, handEdited);
+  const { data: schedules } = useScheduleFrequencies();
+  const day = rowDay(
+    date,
+    occurrenceDate,
+    handEdited,
+    scheduleId ? schedules?.[scheduleId]?.tz : undefined
+  );
   const isSecondary = tone === "secondary";
   const onTone = isSecondary
     ? theme.colors.onSecondaryContainer
@@ -138,7 +145,7 @@ export function ActivityRow({
           }}
         >
           {upcoming ? <UpcomingTag /> : null}
-          {scheduleId ? <RepeatsTag scheduleId={scheduleId} /> : null}
+          {scheduleId ? <RepeatsTag scheduleId={scheduleId} upcoming={!!upcoming} /> : null}
           <Text variant="labelSmall" style={{ color: onTone }}>
             {upcoming ? `Counts from ${formatDay(day)}` : formatDay(day)}
           </Text>

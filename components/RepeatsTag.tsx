@@ -1,16 +1,22 @@
 import { Chip } from "react-native-paper";
 import { useScheduleFrequencies } from "@/lib/queries/useRecurringSchedules";
-import { repeatsPhrase } from "@/lib/recurrence";
+import { hidesChip, repeatsPhrase } from "@/lib/recurrence";
 import { useAppTheme } from "@/lib/theme";
 
 // Marks an occurrence of a recurring expense. Renders nothing until the
-// schedule has loaded, nor for a stopped schedule (a hand-edited row it left
-// behind is an ordinary expense now).
-export function RepeatsTag({ scheduleId }: { scheduleId: string }) {
+// schedule has loaded, nor on an upcoming row that a stopped schedule left
+// behind (it will never repeat).
+export function RepeatsTag({
+  scheduleId,
+  upcoming,
+}: {
+  scheduleId: string;
+  upcoming: boolean;
+}) {
   const theme = useAppTheme();
   const { data: schedules } = useScheduleFrequencies();
   const schedule = schedules?.[scheduleId];
-  if (!schedule || schedule.stopped) return null;
+  if (!schedule || hidesChip(schedule, upcoming)) return null;
 
   return (
     <Chip

@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react-native";
 import { freezeNow, renderWithPaper, typeDate } from "../helpers/testUtils";
-import { startOfLocalDayISO } from "@/lib/dates";
+import { startOfLocalDayISO, startOfLocalDayInstant } from "@/lib/dates";
 import AddExpense from "@/app/group-add-expense";
 
 const mockBack = jest.fn();
@@ -23,6 +23,16 @@ jest.mock("@/lib/queries/useExpenses", () => ({
 }));
 jest.mock("@/lib/queries/useRecurringSchedules", () => ({
   useCreateRecurringSchedule: () => ({ mutateAsync: jest.fn(), isPending: false }),
+  useScheduleFrequencies: () => ({
+    data: {
+      s1: {
+        frequency: "monthly",
+        tz: "Pacific/Auckland",
+        stopped: false,
+        stopReason: null,
+      },
+    },
+  }),
 }));
 jest.mock("@/lib/snackbar", () => ({ useSnackbar: jest.fn() }));
 
@@ -408,6 +418,43 @@ describe("AddExpense screen", () => {
               schedule_id: "s1",
               occurrence_date: "2026-11-05",
               date: new Date(2026, 10, 2, 15).toISOString(),
+              expense_splits: [
+                { user_id: "u1", amount: 15 },
+                { user_id: "u2", amount: 15 },
+              ],
+            },
+          ],
+        });
+        await renderWithPaper(<AddExpense />);
+
+        expect(screen.getByTestId("date-field")).toHaveProp(
+          "value",
+          "11/05/2026"
+        );
+        await fireEvent.press(screen.getByText("Save Changes"));
+
+        await waitFor(() =>
+          expect(mockUpdateMutateAsync).toHaveBeenCalledTimes(1)
+        );
+        expect(mockUpdateMutateAsync.mock.calls[0][0].date).toBeUndefined();
+      });
+
+      it("prefills an edited but unmoved scheduled row with its schedule's day", async () => {
+        (useExpenses as jest.Mock).mockReturnValue({
+          data: [
+            {
+              id: "exp-1",
+              description: "Rent",
+              amount: 30,
+              paid_by: "u1",
+              split_type: "equal",
+              schedule_id: "s1",
+              occurrence_date: "2026-11-05",
+              hand_edited: true,
+              // The first instant of Nov 5 in the schedule's zone (Auckland).
+              date: new Date(
+                startOfLocalDayInstant("2026-11-05", "Pacific/Auckland")
+              ).toISOString(),
               expense_splits: [
                 { user_id: "u1", amount: 15 },
                 { user_id: "u2", amount: 15 },

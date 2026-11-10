@@ -94,8 +94,14 @@ describe("useScheduleFrequencies", () => {
   it("maps each visible schedule id to its frequency and whether it has stopped", async () => {
     const builder = queryBuilder({
       data: [
-        { id: "s1", frequency: "monthly", stopped_at: null },
-        { id: "s2", frequency: "biweekly", stopped_at: "2026-03-01T00:00:00Z" },
+        { id: "s1", frequency: "monthly", tz: "UTC", stopped_at: null, stop_reason: null },
+        {
+          id: "s2",
+          frequency: "biweekly",
+          tz: "Pacific/Auckland",
+          stopped_at: "2026-03-01T00:00:00Z",
+          stop_reason: "member left",
+        },
       ],
       error: null,
     });
@@ -106,10 +112,17 @@ describe("useScheduleFrequencies", () => {
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(builder.select).toHaveBeenCalledWith("id, frequency, stopped_at");
+    expect(builder.select).toHaveBeenCalledWith(
+      "id, frequency, tz, stopped_at, stop_reason"
+    );
     expect(result.current.data).toEqual({
-      s1: { frequency: "monthly", stopped: false },
-      s2: { frequency: "biweekly", stopped: true },
+      s1: { frequency: "monthly", tz: "UTC", stopped: false, stopReason: null },
+      s2: {
+        frequency: "biweekly",
+        tz: "Pacific/Auckland",
+        stopped: true,
+        stopReason: "member left",
+      },
     });
   });
 

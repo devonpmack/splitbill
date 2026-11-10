@@ -27,7 +27,8 @@ import { useDisplayCurrency } from "@/lib/display-currency";
 import { useSnackbar } from "@/lib/snackbar";
 import { useConfirm } from "@/lib/confirm";
 import { useAppTheme } from "@/lib/theme";
-import { withSkipNote } from "@/lib/recurrence";
+import { hidesChip, withSkipNote } from "@/lib/recurrence";
+import { isUpcoming } from "@/lib/dates";
 import { useScheduleFrequencies } from "@/lib/queries/useRecurringSchedules";
 import { useNow } from "@/lib/useNow";
 import { ActivityList, splitActivityListItems } from "@/components/ActivityList";
@@ -131,9 +132,10 @@ export function ContactDetailScreen({
   const hasActivity = activityItems.length > 0 || upcomingItems.length > 0;
 
   const handleDeleteExpense = (expenseId: string) => {
-    const scheduleId = expenses?.find((e) => e.id === expenseId)?.schedule_id;
+    const row = expenses?.find((e) => e.id === expenseId);
+    const schedule = row?.schedule_id ? schedules?.[row.schedule_id] : undefined;
     const isOccurrence =
-      !!scheduleId && schedules?.[scheduleId]?.stopped === false;
+      !!schedule && !hidesChip(schedule, isUpcoming(row?.date ?? ""));
     confirm({
       title: "Delete Expense",
       message: withSkipNote(

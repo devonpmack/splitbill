@@ -14,6 +14,7 @@ jest.mock("@/lib/queries/useRecurringSchedules", () => ({
   useScheduleFrequencies: jest.fn(),
 }));
 
+import { startOfLocalDayInstant } from "@/lib/dates";
 import { useScheduleFrequencies } from "@/lib/queries/useRecurringSchedules";
 
 // The instant Auckland's Dec 1 starts: Nov 30 in Vancouver, Dec 1 in Auckland.
@@ -43,11 +44,20 @@ function expense(over: Partial<ExpenseWithSplits> = {}): ExpenseWithSplits {
   };
 }
 
-function frequencies(map: Record<string, string>, stopped: string[] = []) {
+function frequencies(
+  map: Record<string, string>,
+  stopped: Record<string, string> = {},
+  tz: Record<string, string> = {}
+) {
   const data = Object.fromEntries(
     Object.entries(map).map(([id, frequency]) => [
       id,
-      { frequency, stopped: stopped.includes(id) },
+      {
+        frequency,
+        tz: tz[id] ?? "America/Toronto",
+        stopped: id in stopped,
+        stopReason: stopped[id] ?? null,
+      },
     ])
   );
   (useScheduleFrequencies as jest.Mock).mockReturnValue({ data });
@@ -97,15 +107,37 @@ describe("ExpenseCard repeat chip", () => {
     expect(screen.queryByText(/^Repeats/)).toBeNull();
   });
 
-  it("shows no chip on a kept row of a stopped schedule", async () => {
-    frequencies({ s1: "daily" }, ["s1"]);
-    await renderWithPaper(
-      card(
-        expense({ schedule_id: "s1", occurrence_date: "2026-12-01", hand_edited: true })
-      )
+  describe("a schedule that will not repeat any more", () => {
+    const row = () =>
+      expense({ schedule_id: "s1", occurrence_date: "2026-12-01", hand_edited: true });
+
+    it.each(["stopped", "member left", "invalid"])(
+      "hides the chip on its upcoming row when it stopped for '%s'",
+      async (reason) => {
+        frequencies({ s1: "daily" }, { s1: reason });
+        await renderWithPaper(card(row(), true));
+
+        expect(screen.getByText("Upcoming")).toBeTruthy();
+        expect(screen.queryByText(/^Repeats/)).toBeNull();
+      }
     );
 
-    expect(screen.queryByText(/^Repeats/)).toBeNull();
+    it.each(["stopped", "member left", "invalid"])(
+      "keeps the chip on its past rows when it stopped for '%s'",
+      async (reason) => {
+        frequencies({ s1: "daily" }, { s1: reason });
+        await renderWithPaper(card(row(), false));
+
+        expect(screen.getByText("Repeats daily")).toBeTruthy();
+      }
+    );
+
+    it("keeps the chip on the upcoming row of a completed schedule", async () => {
+      frequencies({ s1: "daily" }, { s1: "completed" });
+      await renderWithPaper(card(row(), true));
+
+      expect(screen.getByText("Repeats daily")).toBeTruthy();
+    });
   });
 
   it("shows no chip until the schedule's frequency is known", async () => {
@@ -165,6 +197,49 @@ describe("ExpenseCard repeat chip", () => {
 
     expect(screen.getByText("Nov 30")).toBeTruthy();
     expect(screen.queryByText("Nov 11")).toBeNull();
+  });
+
+  it("an edited occurrence still at its original instant keeps occurrence_date, whatever zone the viewer is in", async () => {
+    frequencies({ s1: "monthly" }, {}, { s1: "Pacific/Auckland" });
+    const date = new Date(
+      startOfLocalDayInstant("2026-12-01", "Pacific/Auckland")
+    ).toISOString();
+    await renderWithPaper(
+      card(
+        expense({
+          schedule_id: "s1",
+          occurrence_date: "2026-12-01",
+          hand_edited: true,
+          date,
+        })
+      )
+    );
+
+    expect(screen.getByText("Dec 1")).toBeTruthy();
+  });
+
+  it("an edited occurrence moved in the schedule's zone shows the moved day", async () => {
+    frequencies({ s1: "monthly" }, {}, { s1: "Pacific/Auckland" });
+    const date = new Date(
+      startOfLocalDayInstant("2026-12-05", "Pacific/Auckland")
+    ).toISOString();
+    await renderWithPaper(
+      card(
+        expense({
+          schedule_id: "s1",
+          occurrence_date: "2026-12-01",
+          hand_edited: true,
+          date,
+        })
+      )
+    );
+
+    expect(screen.queryByText("Dec 1")).toBeNull();
+    expect(
+      screen.getByText(
+        new Date(date).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+      )
+    ).toBeTruthy();
   });
 
   it("an unmoved occurrence keeps occurrence_date", async () => {
@@ -287,6 +362,49 @@ describe("activity feed rows", () => {
 
     expect(screen.getByText("Counts from Nov 30, 2026")).toBeTruthy();
     expect(screen.queryByText(/Nov 11/)).toBeNull();
+  });
+
+  it("an edited-but-unmoved upcoming row counts from its occurrence date", async () => {
+    frequencies({ s1: "monthly" }, {}, { s1: "Pacific/Auckland" });
+    await renderWithPaper(
+      <ActivityFeedItemCard
+        item={{
+          kind: "expense",
+          id: "e1",
+          ts: "x",
+          payload: groupRow({
+            schedule_id: "s1",
+            occurrence_date: "2026-12-01",
+            hand_edited: true,
+            date: new Date(
+              startOfLocalDayInstant("2026-12-01", "Pacific/Auckland")
+            ).toISOString(),
+          }),
+        }}
+        currentUserId="u1"
+        upcoming
+      />
+    );
+
+    expect(screen.getByText("Counts from Dec 1, 2026")).toBeTruthy();
+  });
+
+  it("hides the chip on an upcoming leftover of a stopped schedule", async () => {
+    frequencies({ s1: "monthly" }, { s1: "stopped" });
+    await renderWithPaper(
+      <ActivityFeedItemCard
+        item={{
+          kind: "expense",
+          id: "e1",
+          ts: "x",
+          payload: groupRow({ schedule_id: "s1", occurrence_date: "2026-12-01", hand_edited: true }),
+        }}
+        currentUserId="u1"
+        upcoming
+      />
+    );
+
+    expect(screen.queryByText(/^Repeats/)).toBeNull();
   });
 
   it("a hand-moved contact row shows the moved day", async () => {

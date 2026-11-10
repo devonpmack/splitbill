@@ -24,6 +24,16 @@ jest.mock("@/lib/queries/useContactExpenses", () => ({
 }));
 jest.mock("@/lib/queries/useRecurringSchedules", () => ({
   useCreateRecurringSchedule: () => ({ mutateAsync: jest.fn(), isPending: false }),
+  useScheduleFrequencies: () => ({
+    data: {
+      s1: {
+        frequency: "monthly",
+        tz: "Pacific/Auckland",
+        stopped: false,
+        stopReason: null,
+      },
+    },
+  }),
 }));
 jest.mock("@/lib/snackbar", () => ({ useSnackbar: jest.fn() }));
 

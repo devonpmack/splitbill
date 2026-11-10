@@ -36,6 +36,7 @@ jest.mock("@/lib/queries/useContactExpenses", () => ({
 }));
 jest.mock("@/lib/queries/useRecurringSchedules", () => ({
   useCreateRecurringSchedule: jest.fn(),
+  useScheduleFrequencies: () => ({ data: {} }),
 }));
 jest.mock("@/lib/snackbar", () => ({ useSnackbar: jest.fn() }));
 // A plain button in place of the currency menu, which mounts through a Portal.

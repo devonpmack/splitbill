@@ -73,14 +73,25 @@ jest.mock("@/lib/queries/useBalances", () => ({
   useGroupPairwiseBalances: jest.fn(),
   useGroupSimplifiedEdges: jest.fn(),
 }));
-jest.mock("@/lib/queries/useRecurringSchedules", () => ({
-  useScheduleFrequencies: () => ({
-    data: {
-      s1: { frequency: "monthly", stopped: false },
-      s9: { frequency: "daily", stopped: true },
-    },
-  }),
-}));
+jest.mock("@/lib/queries/useRecurringSchedules", () => {
+  const summary = (stopped: boolean, stopReason: string | null) => ({
+    frequency: "monthly",
+    tz: "UTC",
+    stopped,
+    stopReason,
+  });
+  return {
+    useScheduleFrequencies: () => ({
+      data: {
+        s1: summary(false, null),
+        s8: summary(true, "stopped"),
+        s9: summary(true, "completed"),
+        s7: summary(true, "member left"),
+      },
+    }),
+  };
+});
+
 jest.mock("@/lib/realtime", () => ({ useRealtimeSubscription: jest.fn() }));
 jest.mock("@/lib/snackbar", () => ({ useSnackbar: jest.fn() }));
 jest.mock("@/lib/confirm", () => ({ useConfirm: jest.fn() }));
@@ -599,24 +610,42 @@ describe("GroupDetail screen", () => {
     );
   });
 
-  it("uses the plain delete confirm for a kept row of a stopped schedule", async () => {
-    setup({
-      expenses: [
-        {
-          ...expensesFixture[0],
-          schedule_id: "s9",
-          occurrence_date: "2024-01-01",
-          hand_edited: true,
-        },
-      ],
-    });
-    await renderWithPaper(<GroupDetail />);
+  describe("delete confirm on rows of a schedule that has stopped", () => {
+    const NOTE = /the series continues/;
+    const open = async (scheduleId: string, date: string) => {
+      setup({
+        expenses: [
+          {
+            ...expensesFixture[0],
+            schedule_id: scheduleId,
+            occurrence_date: "2024-01-01",
+            hand_edited: true,
+            date,
+          },
+        ],
+      });
+      await renderWithPaper(<GroupDetail />);
+      await fireEvent(screen.getByText("Dinner"), "longPress");
+      return mockConfirm.mock.calls[0][0].message as string;
+    };
 
-    await fireEvent(screen.getByText("Dinner"), "longPress");
-
-    expect(mockConfirm.mock.calls[0][0].message).not.toMatch(
-      /occurrence|series/
+    it.each(["s8", "s7"])(
+      "an upcoming leftover of stopped schedule %s gets the plain confirm",
+      async (id) => {
+        expect(await open(id, "2099-01-01T00:00:00Z")).not.toMatch(NOTE);
+      }
     );
+
+    it.each(["s8", "s7"])(
+      "a past row of stopped schedule %s still says the series continues",
+      async (id) => {
+        expect(await open(id, "2024-01-01T00:00:00Z")).toMatch(NOTE);
+      }
+    );
+
+    it("an upcoming row of a completed schedule still says the series continues", async () => {
+      expect(await open("s9", "2099-01-01T00:00:00Z")).toMatch(NOTE);
+    });
   });
 
   it("does not mention a series when deleting an ordinary expense", async () => {

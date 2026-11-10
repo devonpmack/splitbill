@@ -21,11 +21,13 @@ import {
 import {
   deviceTimeZone,
   formatCalendarDay,
+  isMovedOccurrence,
   parseCalendarDate,
   startOfLocalDayISO,
   toLocalDateString,
 } from "@/lib/dates";
 import { useExchangeRates } from "@/lib/exchange-rates";
+import { useScheduleFrequencies } from "@/lib/queries/useRecurringSchedules";
 import { useSnackbar } from "@/lib/snackbar";
 import { DateField } from "@/components/DateField";
 import { FormScreen } from "@/components/FormScreen";
@@ -49,6 +51,7 @@ export type EditableExpense = {
   currency: string;
   exchange_rate: number;
   date?: string;
+  schedule_id?: string | null;
   occurrence_date?: string | null;
   hand_edited?: boolean;
   expense_splits?: { user_id: string; amount: number }[] | null;
@@ -68,12 +71,24 @@ export type ExpenseFormSubmission = {
   repeat?: RepeatSubmission;
 };
 
-// An untouched scheduled row is dated by its schedule's calendar day, whichever
-// zone it is edited from; a moved one by its own date.
-function storedDate(expense: EditableExpense | undefined): string | undefined {
-  return expense?.occurrence_date && !expense.hand_edited
-    ? startOfLocalDayISO(parseCalendarDate(expense.occurrence_date))
-    : expense?.date;
+// A scheduled row is dated by its schedule's calendar day, whichever zone it is
+// edited from, unless a member moved it.
+function storedDate(
+  expense: EditableExpense | undefined,
+  scheduleTz: string | undefined
+): string | undefined {
+  if (
+    !expense?.occurrence_date ||
+    isMovedOccurrence(
+      expense.date ?? "",
+      expense.occurrence_date,
+      expense.hand_edited,
+      scheduleTz
+    )
+  ) {
+    return expense?.date;
+  }
+  return startOfLocalDayISO(parseCalendarDate(expense.occurrence_date));
 }
 
 type ExpenseFormScreenProps = {
@@ -120,7 +135,13 @@ export function ExpenseFormScreen({
   );
   const [repeatCount, setRepeatCount] = useState("12");
 
-  const day = useDayPick(isEdit ? storedDate(existingExpense) : undefined);
+  const { data: schedules } = useScheduleFrequencies();
+  const scheduleTz = existingExpense?.schedule_id
+    ? schedules?.[existingExpense.schedule_id]?.tz
+    : undefined;
+  const day = useDayPick(
+    isEdit ? storedDate(existingExpense, scheduleTz) : undefined
+  );
   const repeating = !isEdit && frequency !== null;
   const startDay = day.value ?? new Date();
   const startDate = toLocalDateString(startDay);

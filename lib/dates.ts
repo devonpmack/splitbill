@@ -37,17 +37,81 @@ export function parseCalendarDate(day: string): Date {
   return new Date(year, month - 1, date);
 }
 
-// The day a row is shown under. An untouched scheduled row carries its
-// schedule's calendar date, which every viewer sees as is. Any other row is
-// dated by its instant in the viewer's own zone, and that includes an
-// occurrence a member has edited: the server keeps its occurrence_date but
-// moves `date`, and `date` is what balances count from.
+// The calendar day ("YYYY-MM-DD") an instant falls on in the IANA zone `tz`.
+export function calendarDayIn(instant: Date, tz: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(instant);
+  const part = (type: string) => parts.find((p) => p.type === type)?.value;
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+// Epoch ms of the first instant of the calendar day `day` ("YYYY-MM-DD") in
+// the IANA zone `tz`: what the server stores as an occurrence's `date`. Where
+// the clocks spring forward at midnight (Havana) that is 01:00, not 00:00.
+export function startOfLocalDayInstant(day: string, tz: string): number {
+  const [year, month, date] = day.split("-").map(Number);
+  const utcMidnight = Date.UTC(year, month - 1, date);
+  const offsetMinutes = (ms: number) => {
+    const p = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }).formatToParts(new Date(ms));
+    const n = (type: string) => Number(p.find((x) => x.type === type)?.value);
+    const local = Date.UTC(n("year"), n("month") - 1, n("day"), n("hour"), n("minute"), n("second"));
+    return (local - Math.floor(ms / 1000) * 1000) / 60_000;
+  };
+
+  let guess = utcMidnight;
+  for (let i = 0; i < 3; i++) {
+    guess = utcMidnight - offsetMinutes(guess) * 60_000;
+  }
+  // Where midnight does not exist the offset search lands on the evening
+  // before: step forward to the first instant that is on the day.
+  for (let i = 0; i < 200 && calendarDayIn(new Date(guess), tz) < day; i++) {
+    guess += QUARTER_HOUR_MS;
+  }
+  return guess;
+}
+
+// A member's edit freezes a scheduled row and may move its `date` (what
+// balances count from) off the occurrence_date. It is moved when `date` is no
+// longer the first instant of occurrence_date's day in the schedule's zone.
+// Without the schedule's zone an edited row counts as moved.
+export function isMovedOccurrence(
+  date: string,
+  occurrenceDate: string,
+  handEdited?: boolean | null,
+  scheduleTz?: string | null
+): boolean {
+  if (!handEdited) return false;
+  return !(
+    scheduleTz &&
+    new Date(date).getTime() ===
+      startOfLocalDayInstant(occurrenceDate, scheduleTz)
+  );
+}
+
+// The day a row is shown under. A scheduled row that has not been moved
+// carries its schedule's calendar date, which every viewer sees as is; any
+// other row is dated by its instant in the viewer's zone.
 export function rowDay(
   date: string,
   occurrenceDate?: string | null,
-  handEdited?: boolean | null
+  handEdited?: boolean | null,
+  scheduleTz?: string | null
 ): Date {
-  return occurrenceDate && !handEdited
+  return occurrenceDate &&
+    !isMovedOccurrence(date, occurrenceDate, handEdited, scheduleTz)
     ? parseCalendarDate(occurrenceDate)
     : new Date(date);
 }

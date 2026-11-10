@@ -69,7 +69,8 @@ function setSchedules(data: RecurringSchedule[] | undefined) {
 }
 
 beforeEach(() => {
-  freezeNow(new Date(2026, 10, 9, 15));
+  // 15:00 on Nov 9 in Toronto (the fixture schedules' zone), Nov 10 in Auckland.
+  freezeNow(new Date("2026-11-09T20:00:00Z"));
   jest.clearAllMocks();
   mockParams.groupId = "g1";
   mockParams.contactUserId = undefined;
@@ -150,18 +151,29 @@ describe("Repeating screen", () => {
   });
 
   describe("next occurrence", () => {
+    // Noon in Toronto on the given day.
     const today = (y: number, m: number, d: number) => {
       jest.useRealTimers();
-      freezeNow(new Date(y, m - 1, d, 15));
+      freezeNow(new Date(Date.UTC(y, m - 1, d, 17)));
     };
 
-    it("is today for a daily series whose next days are already created ahead", async () => {
+    it("is tomorrow for a daily series whose next days are already created ahead", async () => {
       setSchedules([
         schedule({ frequency: "daily", start_date: "2026-11-07", next_index: 6 }),
       ]);
       await renderWithPaper(<Repeating />);
 
-      expect(screen.getByText("Next: Nov 9, 2026")).toBeTruthy();
+      expect(screen.getByText("Next: Nov 10, 2026")).toBeTruthy();
+    });
+
+    it("monthly 'After 3' starting today: Next is a month on and 2 are left", async () => {
+      setSchedules([
+        schedule({ start_date: "2026-11-09", max_count: 3, next_index: 1 }),
+      ]);
+      await renderWithPaper(<Repeating />);
+
+      expect(screen.getByText("Next: Dec 9, 2026")).toBeTruthy();
+      expect(screen.getByText("2 left")).toBeTruthy();
     });
 
     it.each([
@@ -169,7 +181,7 @@ describe("Repeating screen", () => {
       ["is back on the 31st after a clamp", [2026, 12, 1], "2026-01-31", "monthly", "Dec 31, 2026"],
       ["lands on Feb 29 in a leap year", [2028, 2, 1], "2028-01-31", "monthly", "Feb 29, 2028"],
       ["clamps a yearly Feb 29", [2028, 3, 1], "2028-02-29", "yearly", "Feb 28, 2029"],
-      ["is on the start day itself", [2026, 11, 9], "2026-11-09", "biweekly", "Nov 9, 2026"],
+      ["skips today's own occurrence", [2026, 11, 9], "2026-11-09", "biweekly", "Nov 23, 2026"],
       ["steps every 2 weeks", [2026, 11, 10], "2026-11-09", "biweekly", "Nov 23, 2026"],
       ["steps weekly across the year end", [2026, 12, 29], "2026-12-30", "weekly", "Dec 30, 2026"],
       ["has not started", [2026, 11, 9], "2027-02-01", "daily", "Feb 1, 2027"],
@@ -181,9 +193,22 @@ describe("Repeating screen", () => {
       expect(screen.getByText(`Next: ${expected}`)).toBeTruthy();
     });
 
-    it("shows no next date once every counted occurrence is past", async () => {
+    it("uses the schedule's own zone for today: Auckland is already on Nov 10", async () => {
       setSchedules([
-        schedule({ start_date: "2026-08-09", max_count: 3, next_index: 3 }),
+        schedule({
+          frequency: "daily",
+          start_date: "2026-11-01",
+          tz: "Pacific/Auckland",
+        }),
+      ]);
+      await renderWithPaper(<Repeating />);
+
+      expect(screen.getByText("Next: Nov 11, 2026")).toBeTruthy();
+    });
+
+    it("shows no next date once every counted occurrence is today or earlier", async () => {
+      setSchedules([
+        schedule({ start_date: "2026-08-09", max_count: 4, next_index: 4 }),
       ]);
       await renderWithPaper(<Repeating />);
 
@@ -201,13 +226,22 @@ describe("Repeating screen", () => {
       expect(screen.getByText("Until Nov 1, 2026")).toBeTruthy();
     });
 
-    it("still shows an occurrence that falls on the end date", async () => {
+    it("end date is inclusive: an occurrence on it is still the next one", async () => {
+      setSchedules([
+        schedule({ start_date: "2026-01-09", end_date: "2026-12-09" }),
+      ]);
+      await renderWithPaper(<Repeating />);
+
+      expect(screen.getByText("Next: Dec 9, 2026")).toBeTruthy();
+    });
+
+    it("shows no next date when the end date is today", async () => {
       setSchedules([
         schedule({ start_date: "2026-01-09", end_date: "2026-11-09" }),
       ]);
       await renderWithPaper(<Repeating />);
 
-      expect(screen.getByText("Next: Nov 9, 2026")).toBeTruthy();
+      expect(screen.queryByText(/^Next:/)).toBeNull();
     });
   });
 
@@ -220,14 +254,14 @@ describe("Repeating screen", () => {
     });
 
     it("counts left from the next occurrence, not from the cursor", async () => {
-      // 12 monthly from Jan 9: Nov 9 is the 11th, so 2 are left (Nov, Dec),
-      // wherever the server's cursor is.
+      // 12 monthly from Jan 9: Nov 9 (today) is the 11th and already made, so
+      // only Dec 9 is left, wherever the server's cursor is.
       setSchedules([
         schedule({ start_date: "2026-01-09", max_count: 12, next_index: 11 }),
       ]);
       await renderWithPaper(<Repeating />);
 
-      expect(screen.getByText("2 left")).toBeTruthy();
+      expect(screen.getByText("1 left")).toBeTruthy();
     });
   });
 

@@ -1,4 +1,4 @@
-import { formatCalendarDay, toLocalDateString } from "./dates";
+import { calendarDayIn, formatCalendarDay, toLocalDateString } from "./dates";
 import type {
   RecurringFrequency,
   RecurringSchedule,
@@ -89,23 +89,50 @@ export function occurrenceDate(
   );
 }
 
-// The first occurrence on or after `today` (the viewer's local day) that the
-// schedule will still make, counted from the start date, or null when it is
-// stopped or has run out. The server's cursor is not used: occurrences up to
-// 48 hours ahead are created early, so the cursor can sit days past the one
-// that is really next.
+// The first occurrence strictly after today (in the schedule's own zone, at the
+// instant `now`) that the schedule will still make, counted from the start
+// date, or null when it is stopped or has run out. Today's occurrence has
+// already been created, and the server's cursor is not used: occurrences up to
+// 48 hours ahead are created early, so it can sit days past the real next one.
+// An occurrence a member deleted (a skip) cannot be seen from here, so it can
+// still be shown as the next one.
 export function nextOccurrenceFrom(
   schedule: RecurringSchedule,
-  today: Date
+  now: Date
 ): { index: number; date: string } | null {
   if (schedule.stopped_at) return null;
-  const todayDate = toLocalDateString(today);
+  const today = calendarDayIn(now, schedule.tz);
   for (let index = 0; ; index++) {
     if (schedule.max_count !== null && index >= schedule.max_count) return null;
     const date = occurrenceDate(schedule.start_date, schedule.frequency, index);
     if (schedule.end_date !== null && date > schedule.end_date) return null;
-    if (date >= todayDate) return { index, date };
+    if (date > today) return { index, date };
   }
+}
+
+// What a row needs to know about its schedule.
+export interface ScheduleSummary {
+  frequency: RecurringFrequency;
+  tz: string;
+  stopped: boolean;
+  stopReason: RecurringStopReason | null;
+}
+
+// An upcoming row left behind by a schedule that was stopped, lost a member or
+// failed will never repeat, so it is not marked as repeating. Past rows keep
+// their mark (they were part of the series) and so do those of a schedule that
+// simply finished: the server flags it completed up to 48 hours before its
+// last occurrence, while its rows are still upcoming.
+export function hidesChip(
+  schedule: ScheduleSummary | undefined,
+  isUpcomingRow: boolean
+): boolean {
+  return (
+    !!schedule &&
+    isUpcomingRow &&
+    schedule.stopped &&
+    schedule.stopReason !== "completed"
+  );
 }
 
 export function endSummary(
