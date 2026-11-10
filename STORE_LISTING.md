@@ -45,14 +45,14 @@ Made for every day
 - View balances in the currency you prefer
 - Light and dark themes
 
-Sign up with your email address and start splitting in a minute. Evenpot is made by Devon Software.
+Sign up with your email address and start splitting in a minute. Evenpot is made by [DEVELOPER NAME].
 ```
 
 ## Things to confirm before pasting
 
 - **"Free, no ads, no limits, no Pro tier" is a promise.** It is true of the app today (no ads, in-app purchase or paywall code). Keep it only if that is the intent; if a paid plan or ads are ever added, change the listing first. Not in the title, per the Play policy.
 - **Alerts.** The notification switches in Settings only save a local preference today and nothing sends push notifications yet, so the listing does not mention alerts. Add it when that ships.
-- **Developer name.** The last line says "Devon Software", confirmed by the account owner as the name of the Play developer account. Make sure it matches what the Console shows.
+- **Developer name.** The last line has the placeholder "[DEVELOPER NAME]". Replace it with the public developer name the Play Console shows for the account Evenpot is published under (the account owner chose the existing Overture Interactive account), and check it matches exactly.
 - **Features.** Everything listed exists in the app at this commit. If the recurring and future-dated transactions work lands later, add a line for it in the update that ships it.
 - **Hosted pages (live):** privacy policy https://evenpot.overtureinteractive.com/privacy (paste into Console, Policy and programs, App content, Privacy policy) and account deletion https://evenpot.overtureinteractive.com/delete-account (the delete account URL in the Data safety form). The app has no in-app delete button yet, which Play also expects.
 - **Still needed in the Console, not written here:** the icon (`assets/store/play-icon-512.png`), the feature graphic, the phone screenshots and the category (Finance or Productivity). The files are in `assets/store/`.

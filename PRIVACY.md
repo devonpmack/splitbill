@@ -1,10 +1,10 @@
 # Evenpot privacy policy
 
-<!-- Draft for the publisher to review. Replace the three placeholders in square brackets ([CONTACT EMAIL], [EFFECTIVE DATE], [NUMBER OF DAYS]) and delete this comment before publishing. Every statement below was checked against the app's code at the time of writing; if the app changes (analytics, ads, push notifications, account deletion), this policy has to change with it. -->
+<!-- Draft for the publisher to review. Replace the four placeholders in square brackets ([DEVELOPER NAME], [CONTACT EMAIL], [EFFECTIVE DATE], [NUMBER OF DAYS]) and delete this comment before publishing. Every statement below was checked against the app's code at the time of writing; if the app changes (analytics, ads, push notifications, account deletion), this policy has to change with it. -->
 
 Effective date: [EFFECTIVE DATE]
 
-Evenpot is a bill-splitting app. It is published by Devon Software ("we", "us"). You can reach us at [CONTACT EMAIL].
+Evenpot is a bill-splitting app. It is published by [DEVELOPER NAME] ("we", "us"). You can reach us at [CONTACT EMAIL].
 
 ## What we collect
 
@@ -66,4 +66,4 @@ If we change this policy we will update the effective date above.
 
 ## Contact
 
-Devon Software, [CONTACT EMAIL]
+[DEVELOPER NAME], [CONTACT EMAIL]
