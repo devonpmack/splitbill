@@ -256,6 +256,39 @@ describe("SQL security guards", () => {
     }
   });
 
+  it("keeps account deletion to one code path and admin deletion to service_role", () => {
+    const functions = readSchema("04_functions.sql");
+    const migration = readMigration("20261109211000_admin_delete_account.sql");
+
+    // admin_delete_account is the one function outside the `_` rule that clients must
+    // not execute: it is meant to be called, by service_role only.
+    for (const sql of [functions, migration]) {
+      expect(sql).toMatch(
+        /revoke execute on function public\.admin_delete_account\(uuid\) from public, anon, authenticated;/i
+      );
+      expect(sql).toMatch(
+        /grant execute on function public\.admin_delete_account\(uuid\) to service_role;/i
+      );
+      expect(sql).not.toMatch(
+        /grant execute on function public\.admin_delete_account\(uuid\) to[^;]*(anon|authenticated|public)/i
+      );
+    }
+
+    const admin = functionBody(functions, "admin_delete_account");
+    expect(admin).toMatch(/raise exception 'User id is required'/i);
+    expect(admin).toMatch(/public\._delete_account\(p_user_id\)/i);
+    expect(admin).not.toMatch(/delete from/i);
+
+    // delete_my_account only points the deletion at the caller.
+    const wrapper = functionBody(functions, "delete_my_account");
+    expect(wrapper).toMatch(/raise exception 'Not authenticated'/i);
+    expect(wrapper).toMatch(/perform public\._delete_account\(v_uid\)/i);
+    expect(wrapper).not.toMatch(/delete from/i);
+
+    // The shared path takes the user as an argument and never reads the JWT.
+    expect(functionBody(functions, "_delete_account")).not.toMatch(/auth\.uid\(\)/i);
+  });
+
   it("restricts contact_requests reads to the two participants", () => {
     const policies = readSchema("05_policies.sql");
 

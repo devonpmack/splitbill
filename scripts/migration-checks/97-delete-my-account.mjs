@@ -753,7 +753,7 @@ export default async function deleteMyAccount({ db, asUser, signUp, check }) {
 
   // ---- The lock on the caller's profile ----------------------------------------------
   {
-    const def = (await one(`select regexp_replace(pg_get_functiondef('public.delete_my_account()'::regprocedure), '\\s+', ' ', 'g') as d`)).d;
+    const def = (await one(`select regexp_replace(pg_get_functiondef('public._delete_account(uuid)'::regprocedure), '\\s+', ' ', 'g') as d`)).d;
     check(
       /from public\.profiles p where p\.id = v_uid for no key update;/.test(def) && !/where p\.id = v_uid for update/.test(def),
       "the caller's profile is locked FOR NO KEY UPDATE (a definition check, not a two-connection test)"
