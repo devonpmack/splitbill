@@ -4,7 +4,7 @@ import { formatCalendarDay } from "@/lib/dates";
 import {
   endSummary,
   frequencyLabel,
-  nextOccurrence,
+  nextOccurrenceFrom,
   stopReasonLabel,
 } from "@/lib/recurrence";
 import { useAppTheme } from "@/lib/theme";
@@ -26,7 +26,7 @@ export function ScheduleCard({
 }: ScheduleCardProps) {
   const theme = useAppTheme();
   const isActive = schedule.stopped_at === null;
-  const next = nextOccurrence(schedule);
+  const next = nextOccurrenceFrom(schedule, new Date());
   const muted = { color: theme.colors.onSurfaceVariant };
 
   return (
@@ -47,11 +47,11 @@ export function ScheduleCard({
             <>
               {next ? (
                 <Text variant="bodySmall" style={muted}>
-                  {`Next: ${formatCalendarDay(next)}`}
+                  {`Next: ${formatCalendarDay(next.date)}`}
                 </Text>
               ) : null}
               <Text variant="bodySmall" style={muted}>
-                {endSummary(schedule)}
+                {endSummary(schedule, next)}
               </Text>
               {schedule.failed_runs > 0 ? (
                 <Text variant="bodySmall" style={{ color: theme.colors.error }}>

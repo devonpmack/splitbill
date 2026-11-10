@@ -89,33 +89,37 @@ export function occurrenceDate(
   );
 }
 
-// The date at the schedule's cursor (the next occurrence to be created), or
-// null when the schedule is stopped or has run out. Occurrences up to 48 hours
-// ahead are created early, so the cursor can be a step past the soonest
-// pending row, which the Upcoming list shows.
-export function nextOccurrence(schedule: RecurringSchedule): string | null {
+// The first occurrence on or after `today` (the viewer's local day) that the
+// schedule will still make, counted from the start date, or null when it is
+// stopped or has run out. The server's cursor is not used: occurrences up to
+// 48 hours ahead are created early, so the cursor can sit days past the one
+// that is really next.
+export function nextOccurrenceFrom(
+  schedule: RecurringSchedule,
+  today: Date
+): { index: number; date: string } | null {
   if (schedule.stopped_at) return null;
-  if (schedule.max_count !== null && schedule.next_index >= schedule.max_count) {
-    return null;
+  const todayDate = toLocalDateString(today);
+  for (let index = 0; ; index++) {
+    if (schedule.max_count !== null && index >= schedule.max_count) return null;
+    const date = occurrenceDate(schedule.start_date, schedule.frequency, index);
+    if (schedule.end_date !== null && date > schedule.end_date) return null;
+    if (date >= todayDate) return { index, date };
   }
-  const next = occurrenceDate(
-    schedule.start_date,
-    schedule.frequency,
-    schedule.next_index
-  );
-  if (schedule.end_date !== null && next > schedule.end_date) return null;
-  return next;
 }
 
-export function endSummary(schedule: RecurringSchedule): string {
+export function endSummary(
+  schedule: RecurringSchedule,
+  next: { index: number } | null
+): string {
   const parts: string[] = [];
   if (schedule.end_date !== null) {
     parts.push(`Until ${formatCalendarDay(schedule.end_date)}`);
   }
   if (schedule.max_count !== null) {
-    parts.push(`${Math.max(schedule.max_count - schedule.next_index, 0)} left`);
+    parts.push(`${next ? schedule.max_count - next.index : 0} left`);
   }
-  return parts.length > 0 ? parts.join(" · ") : "Never ends";
+  return parts.length > 0 ? parts.join(" \u00b7 ") : "Never ends";
 }
 
 // A series is capped well below anything the server or a date can hold.

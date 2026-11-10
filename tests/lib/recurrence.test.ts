@@ -2,7 +2,7 @@ import {
   buildRepeat,
   endSummary,
   frequencyLabel,
-  nextOccurrence,
+  nextOccurrenceFrom,
   lastOccurrenceDate,
   MAX_REPEAT_COUNT,
   occurrenceDate,
@@ -75,31 +75,68 @@ describe("occurrenceDate", () => {
   });
 });
 
-describe("nextOccurrence", () => {
-  it("is the date at the cursor", () => {
-    expect(nextOccurrence(schedule({ next_index: 1 }))).toBe("2026-02-28");
-    expect(nextOccurrence(schedule({ next_index: 2 }))).toBe("2026-03-31");
+describe("nextOccurrenceFrom", () => {
+  const day = (y: number, m: number, d: number) => new Date(y, m - 1, d, 15);
+
+  it("is the first occurrence on or after today, counted from the start date", () => {
+    expect(nextOccurrenceFrom(schedule(), day(2026, 2, 1))).toEqual({
+      index: 1,
+      date: "2026-02-28",
+    });
+    expect(nextOccurrenceFrom(schedule(), day(2026, 2, 28))).toEqual({
+      index: 1,
+      date: "2026-02-28",
+    });
+    expect(nextOccurrenceFrom(schedule(), day(2026, 3, 1))).toEqual({
+      index: 2,
+      date: "2026-03-31",
+    });
   });
 
-  it("is null once max_count occurrences have been made or skipped", () => {
-    expect(nextOccurrence(schedule({ max_count: 3, next_index: 3 }))).toBeNull();
-    expect(nextOccurrence(schedule({ max_count: 3, next_index: 2 }))).toBe(
-      "2026-03-31"
-    );
+  it("ignores the cursor: a daily series whose next days are already created shows today", () => {
+    const daily = schedule({
+      frequency: "daily",
+      start_date: "2026-11-07",
+      next_index: 5,
+    });
+    expect(nextOccurrenceFrom(daily, day(2026, 11, 9))).toEqual({
+      index: 2,
+      date: "2026-11-09",
+    });
+  });
+
+  it("is the start date itself before the series has started", () => {
+    expect(
+      nextOccurrenceFrom(
+        schedule({ start_date: "2026-12-01", next_index: 0 }),
+        day(2026, 11, 9)
+      )
+    ).toEqual({ index: 0, date: "2026-12-01" });
+  });
+
+  it("is null once max_count occurrences are all in the past", () => {
+    const counted = schedule({ start_date: "2026-08-09", max_count: 3 });
+    expect(nextOccurrenceFrom(counted, day(2026, 10, 9))).toEqual({
+      index: 2,
+      date: "2026-10-09",
+    });
+    expect(nextOccurrenceFrom(counted, day(2026, 10, 10))).toBeNull();
   });
 
   it("is null when the next date is after end_date, and on it when equal", () => {
+    const ending = schedule({ start_date: "2026-01-09", end_date: "2026-11-01" });
+    expect(nextOccurrenceFrom(ending, day(2026, 11, 9))).toBeNull();
     expect(
-      nextOccurrence(schedule({ end_date: "2026-03-30", next_index: 2 }))
-    ).toBeNull();
-    expect(
-      nextOccurrence(schedule({ end_date: "2026-03-31", next_index: 2 }))
-    ).toBe("2026-03-31");
+      nextOccurrenceFrom({ ...ending, end_date: "2026-11-09" }, day(2026, 11, 9))
+    ).toEqual({ index: 10, date: "2026-11-09" });
   });
 
   it("is null for a stopped schedule", () => {
     expect(
-      nextOccurrence(schedule({ stopped_at: "2026-02-01T00:00:00Z" }))
+      nextOccurrenceFrom(
+        schedule({ stopped_at: "2026-02-01T00:00:00Z" }),
+        day(2026, 2, 1)
+      )
     ).toBeNull();
   });
 });
@@ -132,28 +169,22 @@ describe("labels", () => {
 
 describe("endSummary", () => {
   it("says never when there is no limit", () => {
-    expect(endSummary(schedule())).toBe("Never ends");
+    expect(endSummary(schedule(), { index: 3 })).toBe("Never ends");
   });
 
   it("shows the end date", () => {
-    expect(endSummary(schedule({ end_date: "2026-12-31" }))).toBe(
+    expect(endSummary(schedule({ end_date: "2026-12-31" }), { index: 3 })).toBe(
       "Until Dec 31, 2026"
     );
   });
 
-  it("counts what is left after the made and skipped ones", () => {
-    expect(endSummary(schedule({ max_count: 12, next_index: 5 }))).toBe(
-      "7 left"
-    );
-    expect(endSummary(schedule({ max_count: 1, next_index: 0 }))).toBe(
-      "1 left"
-    );
+  it("counts the next occurrence and every one after it as left", () => {
+    expect(endSummary(schedule({ max_count: 12 }), { index: 5 })).toBe("7 left");
+    expect(endSummary(schedule({ max_count: 1 }), { index: 0 })).toBe("1 left");
   });
 
-  it("never goes below zero", () => {
-    expect(endSummary(schedule({ max_count: 2, next_index: 4 }))).toBe(
-      "0 left"
-    );
+  it("is 0 left when there is no next occurrence", () => {
+    expect(endSummary(schedule({ max_count: 2 }), null)).toBe("0 left");
   });
 });
 
