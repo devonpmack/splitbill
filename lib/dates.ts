@@ -2,17 +2,25 @@ function pad(n: number): string {
   return String(n).padStart(2, "0");
 }
 
-// Local midnight of `date`'s calendar day, e.g. "2026-11-12T00:00:00-05:00".
-// The offset is the one in force at that midnight, so a day across a DST
-// change still starts at its own local midnight.
+const QUARTER_HOUR_MS = 15 * 60 * 1000;
+
+// The first instant of `date`'s local calendar day with its offset, e.g.
+// "2026-11-12T00:00:00-05:00". Where the clocks spring forward at midnight
+// (Havana, Santiago, Cairo, Beirut) 00:00 does not exist that day and the day
+// starts at 01:00, so the time is written from the instant, never assumed.
 export function startOfLocalDayISO(date: Date): string {
-  const midnight = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const offset = -midnight.getTimezoneOffset();
+  let start = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  // An engine may resolve the missing midnight to the previous evening.
+  while (!isSameLocalDay(start, date)) {
+    start = new Date(start.getTime() + QUARTER_HOUR_MS);
+  }
+  const offset = -start.getTimezoneOffset();
   const sign = offset >= 0 ? "+" : "-";
   const abs = Math.abs(offset);
   return (
-    `${midnight.getFullYear()}-${pad(midnight.getMonth() + 1)}-${pad(midnight.getDate())}` +
-    `T00:00:00${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`
+    `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}` +
+    `T${pad(start.getHours())}:${pad(start.getMinutes())}:00` +
+    `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`
   );
 }
 
