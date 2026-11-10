@@ -69,7 +69,9 @@ export default function DeleteAccount() {
       <Section title="What gets deleted">
         <Text variant="bodyMedium">
           Your name, picture and email, and your sign-in. People can no longer
-          find you by email, and you are removed from their contact lists.
+          find you by email. Groups with no one else in them are deleted,
+          repeating expenses you are part of stop, and expenses and payments
+          dated in the future that involve you are removed.
         </Text>
       </Section>
 
@@ -82,7 +84,7 @@ export default function DeleteAccount() {
         </Text>
       </Section>
 
-      <Section title="Your open balances">
+      <Section title="Your open balances in groups">
         {balances.isPending ? (
           <ActivityIndicator />
         ) : balances.isError ? (
@@ -92,7 +94,7 @@ export default function DeleteAccount() {
           </Text>
         ) : (balances.data ?? []).length === 0 ? (
           <Text variant="bodyMedium" style={muted}>
-            You have no open balances.
+            You have no open balances in groups.
           </Text>
         ) : (
           <Card mode="contained">
@@ -121,7 +123,8 @@ export default function DeleteAccount() {
           </Card>
         )}
         <Text variant="bodySmall" style={[muted, { marginTop: 8 }]}>
-          These amounts stay owed after your account is deleted. Settling up
+          These amounts stay owed after your account is deleted. Balances with
+          individual people are not listed here; they stay too. Settling up
           first is up to you.
         </Text>
       </Section>
@@ -135,7 +138,11 @@ export default function DeleteAccount() {
         <View
           style={{ flexDirection: "row", alignItems: "center", paddingVertical: 4 }}
         >
-          <View pointerEvents="none">
+          <View
+            pointerEvents="none"
+            importantForAccessibility="no-hide-descendants"
+            accessibilityElementsHidden
+          >
             <Checkbox status={acknowledged ? "checked" : "unchecked"} />
           </View>
           <Text

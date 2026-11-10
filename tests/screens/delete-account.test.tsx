@@ -52,6 +52,10 @@ describe("DeleteAccount screen", () => {
 
     expect(screen.getByText("What gets deleted")).toBeTruthy();
     expect(screen.getByText(/your name, picture and email/i)).toBeTruthy();
+    expect(
+      screen.getByText(/groups with no one else in them are deleted/i)
+    ).toBeTruthy();
+    expect(screen.getByText(/repeating expenses you are part of stop/i)).toBeTruthy();
     expect(screen.getByText("What stays")).toBeTruthy();
     expect(screen.getByText(/shown as "Deleted user"/)).toBeTruthy();
   });
@@ -75,13 +79,13 @@ describe("DeleteAccount screen", () => {
     setBalances({ data: undefined, isPending: true });
     await renderWithPaper(<DeleteAccount />);
 
-    expect(screen.queryByText("You have no open balances.")).toBeNull();
+    expect(screen.queryByText("You have no open balances in groups.")).toBeNull();
   });
 
   it("says there are no open balances when there are none", async () => {
     await renderWithPaper(<DeleteAccount />);
 
-    expect(screen.getByText("You have no open balances.")).toBeTruthy();
+    expect(screen.getByText("You have no open balances in groups.")).toBeTruthy();
   });
 
   it("still lets me delete when the balances could not be loaded", async () => {
@@ -93,6 +97,26 @@ describe("DeleteAccount screen", () => {
     await fireEvent.press(screen.getByText("Delete my account"));
 
     await waitFor(() => expect(mockDeleteAsync).toHaveBeenCalledTimes(1));
+  });
+
+  it("says that balances with individual people are not listed", async () => {
+    await renderWithPaper(<DeleteAccount />);
+
+    expect(
+      screen.getByText(/balances with individual people are not listed here/i)
+    ).toBeTruthy();
+  });
+
+  it("exposes the tick as a checkbox that reports its state", async () => {
+    await renderWithPaper(<DeleteAccount />);
+    const tick = () => screen.getByLabelText("I understand this can't be undone");
+
+    expect(tick().props.accessibilityRole).toBe("checkbox");
+    expect(tick().props.accessibilityState.checked).toBe(false);
+
+    await fireEvent.press(tick());
+
+    expect(tick().props.accessibilityState.checked).toBe(true);
   });
 
   it("does not delete until the box is ticked and DELETE is typed", async () => {
