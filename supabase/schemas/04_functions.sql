@@ -547,9 +547,15 @@ revoke execute on function public._group_member_balance(uuid, uuid)
 --   3. Otherwise a group p_uid created goes to the longest-standing other live
 --      member (joined_at, then user_id).
 --   4. The membership is removed only when p_uid's net balance is zero and nothing
---      future-dated or still running involves them (leave_group's rules).
+--      future-dated or still running involves them (leave_group's rules), and, in a
+--      group with simplify_debts off, no pairwise edge involving them is open.
 --      Otherwise it stays as a ghost: balances join group_members, so dropping a
 --      member with a non-zero balance would silently move everyone else's numbers.
+--      The pairwise rule (added after #27): with simplify off the raw "who owes whom"
+--      edges are shown, a member can net to zero and still owe one person and be owed
+--      by another, and create_payment refuses a payment with a non-member, so those
+--      edges could never be settled. With simplify on only net balances are shown and
+--      a net-zero member has no edge.
 -- It does not use auth.uid().
 create or replace function public._account_leave_group(p_uid uuid, p_group_id uuid)
 returns void
@@ -588,6 +594,14 @@ begin
   end if;
 
   if abs(public._group_member_balance(p_group_id, p_uid)) >= 0.01 then
+    return;
+  end if;
+
+  if exists (select 1 from public.groups g where g.id = p_group_id and not g.simplify_debts)
+    and exists (
+      select 1 from public._group_pairwise_balances(p_group_id) e
+      where p_uid in (e.from_user, e.to_user)
+    ) then
     return;
   end if;
 
@@ -4046,13 +4060,63 @@ $$;
 revoke execute on function public._contact_pair_balance(uuid, uuid)
   from public, anon, authenticated;
 
+-- Internal: the raw pairwise "who owes whom" edges of a group, the arithmetic of
+-- get_group_pairwise_balances (base amounts, settle-up payments, rows dated in the
+-- future not yet counted, an edge only when the net of a pair exceeds half a cent)
+-- without its auth.uid() gate and without names. _account_leave_group uses it to
+-- tell whether a member with a zero net balance still has an open edge. Not callable
+-- by clients.
+create or replace function public._group_pairwise_balances(p_group_id uuid)
+returns table (
+  from_user uuid,
+  to_user uuid,
+  amount numeric(12, 2)
+)
+language sql
+security definer
+stable
+set search_path = public, pg_temp
+as $$
+  with raw_debts as (
+    select es.user_id as dr, e.paid_by as cr, es.base_amount as amt
+    from public.expenses e
+    join public.expense_splits es on es.expense_id = e.id
+    where e.group_id = p_group_id and es.user_id <> e.paid_by and e.date <= now()
+    union all
+    select pmt.paid_to as dr, pmt.paid_by as cr, pmt.base_amount as amt
+    from public.payments pmt
+    where pmt.group_id = p_group_id and pmt.date <= now()
+  ),
+  pair_net as (
+    select
+      least(rd.dr, rd.cr) as u_lo,
+      greatest(rd.dr, rd.cr) as u_hi,
+      sum(case when rd.dr < rd.cr then rd.amt else -rd.amt end) as net_lo
+    from raw_debts rd
+    group by 1, 2
+  )
+  select
+    case when pn.net_lo > 0 then pn.u_lo else pn.u_hi end,
+    case when pn.net_lo > 0 then pn.u_hi else pn.u_lo end,
+    round(abs(pn.net_lo), 2)::numeric(12, 2)
+  from pair_net pn
+  where abs(pn.net_lo) > 0.005;
+$$;
+
+revoke execute on function public._group_pairwise_balances(uuid)
+  from public, anon, authenticated;
+
 -- Deletes the signed-in user's account, in one transaction (any error rolls all of
 -- it back). Open debts never block it. What stays is what other people's balances
 -- are made of: the expense, split and payment rows the user took part in, shown
 -- under the tombstone profile ('Deleted user', no avatar, deleted_at set).
---   1. The profile row is locked, so two calls serialise. Already a tombstone (or
---      no profile): return, nothing changes.
---   2. The profile becomes a tombstone first, so nothing new can name it.
+--   1. The profile row is locked (FOR NO KEY UPDATE: two calls serialise, but a
+--      concurrent expense insert that only needs a key-share lock on it is not
+--      blocked). Already a tombstone (or no profile) AND no auth.users row left:
+--      return, nothing changes. A tombstone whose auth user is still there (marked by
+--      hand) is not an early return: the steps below are idempotent and delete it.
+--   2. A live profile becomes a tombstone first, so nothing new can name it. (A
+--      tombstone cannot be updated again: see _reject_deleted_profile_update.)
 --   3. Every running schedule where they are the payer, in the splits, the
 --      creator, or one of the two contacts is stopped as 'member left'. Rows
 --      dated in the future are removed: every expense and payment (group and
@@ -4069,6 +4133,10 @@ revoke execute on function public._contact_pair_balance(uuid, uuid)
 --      payments and splits are always kept.
 --   6. The auth.users row is deleted (email, password hash, and on a real project
 --      the sessions, identities and refresh tokens that cascade from it).
+--   7. Best effort: GoTrue's auth.audit_log_entries keeps the email, IP and actor id of
+--      past sign-ins, so the rows naming this user are deleted when that table exists.
+--      A refusal there (privileges, a different GoTrue version) is a NOTICE and does
+--      not roll the deletion back.
 -- The AFTER DELETE trigger from step 6 finds the tombstone already there.
 create or replace function public.delete_my_account()
 returns void
@@ -4079,6 +4147,7 @@ as $$
 declare
   v_uid uuid := auth.uid();
   v_deleted timestamptz;
+  v_has_profile boolean;
   v_schedule uuid;
   v_stopped uuid[] := '{}';
   v_group uuid;
@@ -4089,14 +4158,18 @@ begin
   end if;
 
   select p.deleted_at into v_deleted
-  from public.profiles p where p.id = v_uid for update;
-  if not found or v_deleted is not null then
+  from public.profiles p where p.id = v_uid for no key update;
+  v_has_profile := found;
+  if (not v_has_profile or v_deleted is not null)
+    and not exists (select 1 from auth.users au where au.id = v_uid) then
     return;
   end if;
 
-  update public.profiles
-  set deleted_at = now(), full_name = 'Deleted user', avatar_url = null
-  where id = v_uid;
+  if v_has_profile and v_deleted is null then
+    update public.profiles
+    set deleted_at = now(), full_name = 'Deleted user', avatar_url = null
+    where id = v_uid;
+  end if;
 
   for v_schedule in
     select s.id
@@ -4188,6 +4261,16 @@ begin
     );
 
   delete from auth.users where id = v_uid;
+
+  if to_regclass('auth.audit_log_entries') is not null then
+    begin
+      delete from auth.audit_log_entries
+      where payload->>'actor_id' = v_uid::text
+        or payload->'traits'->>'user_id' = v_uid::text;
+    exception when others then
+      raise notice 'could not clear the audit log entries of the deleted account: %', sqlstate;
+    end;
+  end if;
 end;
 $$;
 
@@ -4220,3 +4303,69 @@ $$;
 
 revoke execute on function public._tombstone_deleted_auth_user()
   from public, anon, authenticated;
+
+-- A tombstone is final. Without this, a deleted user's still-valid JWT (about an
+-- hour) could call update_profile and put the name and avatar back. The delete
+-- function's own update runs on a live row (OLD.deleted_at is null) and so does the
+-- raw-delete trigger's, so neither is blocked. Not callable by clients.
+create or replace function public._reject_deleted_profile_update()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if old.deleted_at is not null then
+    raise exception 'Deleted accounts cannot be changed';
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public._reject_deleted_profile_update()
+  from public, anon, authenticated;
+
+create trigger profiles_reject_deleted_update
+  before update on public.profiles
+  for each row execute function public._reject_deleted_profile_update();
+
+-- PostgREST pre-request guard: a deleted account's JWT stays valid until it expires
+-- (about an hour), and during that time it could still create a group or send a
+-- contact request. With `pgrst.db_pre_request = 'public.reject_deleted_caller'` set on
+-- the authenticator role, PostgREST runs this before every request, as the request
+-- role (so anon, authenticated and service_role keep EXECUTE; it is deliberately not
+-- named with a leading underscore). It raises 42501 for a caller whose profile is a
+-- tombstone and returns for everyone else. It is a guard, not a gate: it never raises
+-- for any other reason (a malformed uid claim or a failed lookup lets the request
+-- through), and it is one primary-key lookup. The setting is made by the migration;
+-- on a hosted project it may need to be applied by hand (see the migration).
+create or replace function public.reject_deleted_caller()
+returns void
+language plpgsql
+security definer
+stable
+set search_path = public, pg_temp
+as $$
+declare
+  v_uid uuid;
+  v_deleted boolean := false;
+begin
+  begin
+    v_uid := auth.uid();
+    if v_uid is null then
+      return;
+    end if;
+    select true into v_deleted
+    from public.profiles p
+    where p.id = v_uid and p.deleted_at is not null;
+  exception when others then
+    return;
+  end;
+
+  if coalesce(v_deleted, false) then
+    raise exception 'This account has been deleted' using errcode = '42501';
+  end if;
+end;
+$$;
+
+revoke execute on function public.reject_deleted_caller() from public;
+grant execute on function public.reject_deleted_caller() to anon, authenticated, service_role;

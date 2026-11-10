@@ -176,7 +176,8 @@ export default async function accountTombstone({ db, asUser, signUp, rejects, ch
     "the other member's get_group_balances is identical before and after the delete"
   );
 
-  await db.query(`update public.profiles set deleted_at = now(), full_name = 'Deleted user' where id = $1`, [amy]);
+  // The raw delete above already tombstoned her (on_auth_user_deleted, piece 3); a tombstone cannot be updated again.
+  await db.query(`update public.profiles set deleted_at = now(), full_name = 'Deleted user' where id = $1 and deleted_at is null`, [amy]);
   const afterTombstone = await groupBalances();
   const ghost = Array.isArray(afterTombstone) ? afterTombstone.find((row) => row.user_id === amy) : null;
   check(

@@ -5,6 +5,10 @@
 // AFTER DELETE trigger on auth.users so a raw delete (dashboard, SQL) leaves a
 // proper tombstone.
 
+import { readFileSync } from "node:fs";
+
+const MIGRATION = new URL("../../supabase/migrations/20261109209000_delete_my_account.sql", import.meta.url);
+
 export default async function deleteMyAccount({ db, asUser, signUp, check }) {
   const q = async (sql, params) => (await db.query(sql, params)).rows;
   const one = async (sql, params) => (await q(sql, params))[0];
@@ -100,6 +104,10 @@ export default async function deleteMyAccount({ db, asUser, signUp, check }) {
       one(`select * from public.create_contact_payment($1, $2, $3, $4, null, null, $5)`, [other.id, from.id, to.id, amount, date])
     );
   const befriend = (a, b) => db.query(`select public.create_contact_pair($1, $2)`, [a.id, b.id]);
+  const half2 = (a, b, amount) => [
+    { userId: a.id, amount },
+    { userId: b.id, amount },
+  ];
 
   const groupBalances = (groupId, viewer) =>
     asUser(viewer.id, () =>
@@ -108,6 +116,7 @@ export default async function deleteMyAccount({ db, asUser, signUp, check }) {
   const contactBalance = async (viewer, other) =>
     (await asUser(viewer.id, () => one(`select public.get_contact_balance($1)::text as b`, [other.id]))).b;
   const count = async (sql, params) => Number((await one(`select count(*)::int as n from (${sql}) t`, params)).n);
+  const without = (rows, ...users) => rows.filter((r) => !users.some((u) => u.id === r.user_id));
   const isMember = async (groupId, u) =>
     (await count(`select 1 from public.group_members where group_id = $1 and user_id = $2`, [groupId, u.id])) === 1;
   const groupExists = async (groupId) => (await count(`select 1 from public.groups where id = $1`, [groupId])) === 1;
@@ -140,22 +149,23 @@ export default async function deleteMyAccount({ db, asUser, signUp, check }) {
       exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a where a.grantee = 0) as public_exec
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public'
-      and p.proname in ('delete_my_account', '_contact_pair_balance', '_stop_schedule_member_left', '_tombstone_deleted_auth_user')
+      and p.proname in ('delete_my_account', 'reject_deleted_caller', '_contact_pair_balance', '_group_pairwise_balances',
+        '_stop_schedule_member_left', '_tombstone_deleted_auth_user', '_reject_deleted_profile_update')
     order by 1
   `);
   const fn = (name) => procs.find((r) => r.proname === name);
-  check(procs.length === 4, "exactly one delete_my_account and one of each private helper exist");
+  check(procs.length === 7, "exactly one delete_my_account, one reject_deleted_caller and one of each private helper exist");
   const del = fn("delete_my_account");
   check(
     del?.sig === "delete_my_account()" && del.ret === "void" && del.prosecdef && del.config.includes("search_path=public, pg_temp"),
     "delete_my_account() takes no arguments, returns void, is SECURITY DEFINER with search_path pinned to public, pg_temp"
   );
   check(del?.authed && !del.anon && !del.public_exec, "delete_my_account is executable by authenticated only (not anon, not PUBLIC)");
-  for (const name of ["_contact_pair_balance", "_stop_schedule_member_left", "_tombstone_deleted_auth_user"]) {
+  for (const name of ["_contact_pair_balance", "_group_pairwise_balances", "_stop_schedule_member_left", "_tombstone_deleted_auth_user", "_reject_deleted_profile_update"]) {
     const p = fn(name);
     check(
-      p?.prosecdef && p.config.includes("search_path=public, pg_temp") && !p.anon && !p.authed && !p.public_exec,
-      `${name} is SECURITY DEFINER, search_path pinned, and not executable by anon, authenticated or PUBLIC`
+      (p?.prosecdef || name === "_reject_deleted_profile_update") && p.config.includes("search_path=public, pg_temp") && !p.anon && !p.authed && !p.public_exec,
+      `${name} ${name === "_reject_deleted_profile_update" ? "(a trigger function, not SECURITY DEFINER)" : "is SECURITY DEFINER"}, search_path pinned, and not executable by anon, authenticated or PUBLIC`
     );
   }
   const spare = await user("Spare");
@@ -180,6 +190,76 @@ export default async function deleteMyAccount({ db, asUser, signUp, check }) {
     "delete_my_account with no signed-in user raises 'Not authenticated'"
   );
   check((await profile(spare)).deleted_at === null && (await authUsers(spare)) === 1, "the refused calls changed nothing");
+
+  // ---- reject_deleted_caller: the PostgREST pre-request guard ------------------------
+  const guard = fn("reject_deleted_caller");
+  check(
+    guard?.sig === "reject_deleted_caller()" && guard.ret === "void" && guard.prosecdef && guard.config.includes("search_path=public, pg_temp"),
+    "reject_deleted_caller() returns void, is SECURITY DEFINER with search_path pinned to public, pg_temp"
+  );
+  check(
+    guard?.anon && guard.authed && !guard.public_exec &&
+      (await one(`select has_function_privilege('service_role', 'public.reject_deleted_caller()', 'execute') as x`)).x,
+    "reject_deleted_caller is executable by anon, authenticated and service_role (the request roles) but not PUBLIC"
+  );
+  check((await errorOf(asUser(spare.id, () => db.query(`select public.reject_deleted_caller()`)))) === null, "it returns for a live user");
+  check(
+    (await errorOf(asUser("00000000-0000-4000-8000-0000000000aa", () => db.query(`select public.reject_deleted_caller()`)))) === null,
+    "it returns for a signed-in uid that has no profile"
+  );
+  check((await errorOf(db.query(`select public.reject_deleted_caller()`))) === null, "it returns when there is no uid");
+  check((await errorOf(asAnon(() => db.query(`select public.reject_deleted_caller()`)))) === null, "it returns for anon");
+  {
+    await db.exec(`set role authenticated; select set_config('request.jwt.claim.sub', 'not-a-uuid', false)`);
+    let bad;
+    try {
+      bad = await errorOf(db.query(`select public.reject_deleted_caller()`));
+    } finally {
+      await db.exec(`reset role; select set_config('request.jwt.claim.sub', '', false)`);
+    }
+    check(bad === null, `it returns (never raises) for a malformed uid claim (got: ${bad})`);
+  }
+  check(
+    (await errorOf(asUser(spare.id, () => db.query(`select public.update_profile('Spare Two', null)`)))) === null &&
+      (await profile(spare)).full_name === "Spare Two",
+    "a live user can still change their profile (the profile guard only stops tombstones)"
+  );
+
+  // The migration points PostgREST at the guard. PGlite has no authenticator role, so run the
+  // migration's own DO block against one created here.
+  {
+    const sql = readFileSync(MIGRATION, "utf8");
+    const block = sql.match(/do \$pre\$[\s\S]*?\$pre\$;/)?.[0];
+    check(Boolean(block), "the migration has a DO block that sets pgrst.db_pre_request");
+    if (block) {
+      const setting = async () =>
+        (await q(`select rolconfig::text as c from pg_roles where rolname = 'authenticator'`))[0]?.c ?? "";
+      await db.exec(`create role authenticator nologin`);
+      try {
+        await db.exec(block);
+        check(
+          (await setting()).includes("pgrst.db_pre_request=public.reject_deleted_caller"),
+          "it sets pgrst.db_pre_request = public.reject_deleted_caller on authenticator"
+        );
+        const roleConfig = await q(`select rolname from pg_roles where rolconfig::text ilike '%db_pre_request%'`);
+        check(roleConfig.length === 1 && roleConfig[0].rolname === "authenticator", "and on no other role (anon is not touched)");
+        await db.exec(`alter role authenticator reset pgrst.db_pre_request`);
+        await db.exec(`set role authenticated`);
+        const notices = [];
+        let failed;
+        try {
+          failed = await errorOf(db.exec(block, { onNotice: (n) => notices.push(n.message) }));
+        } finally {
+          await db.exec(`reset role`);
+        }
+        check(failed === null && notices.some((m) => /db_pre_request not set/.test(m)), `a role that may not alter authenticator gets a NOTICE, not an error (got: ${failed ?? notices.join(" | ")})`);
+        check(!(await setting()).includes("db_pre_request"), "and nothing is set then");
+      } finally {
+        await db.exec(`drop role authenticator`);
+      }
+      check((await errorOf(db.exec(block))) === null, "with no authenticator role the block does nothing and does not raise");
+    }
+  }
 
   // ---- _contact_pair_balance equals get_contact_balance, in every pair shape ---
   {
@@ -231,6 +311,58 @@ export default async function deleteMyAccount({ db, asUser, signUp, check }) {
     void b;
   }
 
+  // ---- _group_pairwise_balances equals get_group_pairwise_balances, in every shape ---
+  {
+    const [x, y, z] = [await user("Xa"), await user("Yb"), await user("Zc")];
+    const shapes = [];
+    const group = async (label, members, setup) => {
+      const gid = await makeGroup(x, members.filter((m) => m !== x));
+      await setup(gid);
+      shapes.push([label, gid]);
+    };
+    await group("no ledger", [x, y], async () => {});
+    await group("equal splits", [x, y, z], (gid) => expense(gid, x, x, 30, equalShares([x, y, z], 30)));
+    await group("exact splits, two payers", [x, y, z], async (gid) => {
+      await expense(gid, x, y, 45, [{ userId: x.id, amount: 5 }, { userId: y.id, amount: 15 }, { userId: z.id, amount: 25 }]);
+      await expense(gid, z, z, 12, [{ userId: x.id, amount: 6 }, { userId: z.id, amount: 6 }]);
+    });
+    await group("a payment", [x, y, z], async (gid) => {
+      await expense(gid, x, x, 60, equalShares([x, y, z], 60));
+      await pay(gid, y, y, x, 12.5);
+    });
+    await group("a foreign-currency expense", [x, y], (gid) =>
+      asUser(x.id, () =>
+        one(
+          `select * from public.create_expense_with_splits($1, $2, 50, 'Fx', null, 'exact'::public.split_type, $3::jsonb, null, 'EUR', 1.1)`,
+          [gid, x.id, json([{ userId: x.id, amount: 20 }, { userId: y.id, amount: 30 }])]
+        )
+      )
+    );
+    await group("future-dated rows ignored", [x, y], async (gid) => {
+      await expense(gid, x, x, 10, half2(x, y, 5));
+      await expense(gid, x, x, 100, half2(x, y, 50), { date: await later(9) });
+      await pay(gid, y, y, x, 40, await later(9));
+    });
+    await group("settled to zero", [x, y], async (gid) => {
+      await expense(gid, x, x, 40, equalShares([x, y], 40));
+      await pay(gid, y, y, x, 20);
+    });
+    await group("a net-zero member with open edges", [x, y, z], async (gid) => {
+      await expense(gid, x, x, 10, [{ userId: x.id, amount: 5 }, { userId: y.id, amount: 5 }]);
+      await expense(gid, y, y, 10, [{ userId: y.id, amount: 5 }, { userId: z.id, amount: 5 }]);
+    });
+    let nonEmpty = 0;
+    for (const [label, gid] of shapes) {
+      const helper = await q(`select from_user, to_user, amount::text as amount from public._group_pairwise_balances($1) order by 1, 2`, [gid]);
+      const real = await asUser(x.id, () =>
+        q(`select from_user, to_user, amount::text as amount from public.get_group_pairwise_balances($1) order by 1, 2`, [gid])
+      );
+      if (real.length > 0) nonEmpty += 1;
+      check(json(helper) === json(real), `_group_pairwise_balances equals get_group_pairwise_balances for ${label} (${real.length} edges)`);
+    }
+    check(nonEmpty >= 5, `the shapes above include real edges (${nonEmpty} non-empty)`);
+  }
+
   // ---- The main scenario ------------------------------------------------------------
   const alice = await user("Alice");
   const bob = await user("Bob");
@@ -271,6 +403,23 @@ export default async function deleteMyAccount({ db, asUser, signUp, check }) {
   const s4 = await groupSchedule(alice, g1, bob, [{ userId: bob.id, amount: 10 }, { userId: cara.id, amount: 10 }], await day(-1));
   const s5 = await groupSchedule(bob, g1, alice, [{ userId: bob.id, amount: 10 }, { userId: cara.id, amount: 10 }], await day(-1));
   const contactSched2 = await contactSchedule(bob, alice, bob, [{ userId: bob.id, amount: 20 }], await day(-1), "EUR");
+  // Schedules the caller created but whose rows do not involve them, each with one pending row edited by hand.
+  const s6 = await groupSchedule(alice, g1, bob, [{ userId: bob.id, amount: 10 }, { userId: cara.id, amount: 10 }], await day(-1));
+  const contactSched3 = await contactSchedule(alice, cara, cara, [{ userId: cara.id, amount: 20 }], await day(-1), "USD");
+  const handEditedGroupRow = (
+    await one(
+      `update public.expenses set hand_edited = true
+        where id = (select id from public.expenses where schedule_id = $1 and date > now() order by date limit 1) returning id`,
+      [s6.id]
+    )
+  ).id;
+  const handEditedContactRow = (
+    await one(
+      `update public.contact_expenses set hand_edited = true
+        where id = (select id from public.contact_expenses where schedule_id = $1 and date > now() order by date limit 1) returning id`,
+      [contactSched3.id]
+    )
+  ).id;
   const g2 = await makeGroup(alice, [], "Alone");
   await expense(g2, alice, alice, 10, [{ userId: alice.id, amount: 10 }]);
   const g3 = await makeGroup(bob, [alice], "Quiet");
@@ -290,6 +439,10 @@ export default async function deleteMyAccount({ db, asUser, signUp, check }) {
     count(`select 1 from public.contact_expenses where schedule_id = $1 and date <= now()`, [scheduleId]);
   const scheduleState = (id) => one(`select stopped_at is not null as stopped, stop_reason from public.recurring_schedules where id = $1`, [id]);
 
+  const handEditedPending = {
+    group: await futureRows(s6.id),
+    contact: await contactFuture(contactSched3.id),
+  };
   const before = {
     g1Bob: await groupBalances(g1, bob),
     g1Cara: await groupBalances(g1, cara),
@@ -311,6 +464,7 @@ export default async function deleteMyAccount({ db, asUser, signUp, check }) {
     pastContactPayments: await count(`select 1 from public.contact_payments where date <= now()`),
   };
   const aliceG1Before = Number(before.g1Bob.find((r) => r.user_id === alice.id).balance);
+  check(handEditedPending.group >= 2 && handEditedPending.contact >= 2, "setup: the schedules the caller only created have two or more pending rows, one edited by hand");
   check(Math.abs(aliceG1Before) > 0.5, `setup: Alice has an open balance in the trip group (${aliceG1Before})`);
   check(Number(before.contactBob) !== 0 && Number(before.contactCara) === 0, `setup: Bob owes Alice ${before.contactBob} (open), Cara and Alice are settled`);
   check(
@@ -336,6 +490,33 @@ export default async function deleteMyAccount({ db, asUser, signUp, check }) {
     seen && seen.deleted_at !== null && seen.full_name === "Deleted user" && seen.avatar_url === null,
     "the profile is already a tombstone when the auth user is deleted (tombstoned first, not by the trigger)"
   );
+
+  // A tombstoned user's still-valid JWT cannot undo the wipe.
+  check(
+    (await errorOf(asUser(alice.id, () => db.query(`select public.update_profile('Real Name', 'https://example.com/me.png')`)))) ===
+      "Deleted accounts cannot be changed",
+    "update_profile as the tombstoned user fails with 'Deleted accounts cannot be changed'"
+  );
+  check(
+    (await profile(alice)).full_name === "Deleted user" && (await profile(alice)).avatar_url === null,
+    "and the profile still reads 'Deleted user' with no avatar"
+  );
+  check(
+    (await errorOf(db.query(`update public.profiles set full_name = 'Real Name' where id = $1`, [alice.id]))) === "Deleted accounts cannot be changed" &&
+      (await errorOf(db.query(`update public.profiles set deleted_at = null where id = $1`, [alice.id]))) === "Deleted accounts cannot be changed",
+    "an owner-level update of a tombstone row fails too, including clearing deleted_at"
+  );
+  {
+    const e = await asUser(alice.id, async () => {
+      try {
+        await db.query(`select public.reject_deleted_caller()`);
+        return null;
+      } catch (error) {
+        return error;
+      }
+    });
+    check(e?.code === "42501" && e.message === "This account has been deleted", "reject_deleted_caller raises 42501 'This account has been deleted' for the tombstoned caller");
+  }
 
   // Profile and auth user.
   const gone = await profile(alice);
@@ -381,6 +562,20 @@ export default async function deleteMyAccount({ db, asUser, signUp, check }) {
     const s = await scheduleState(id);
     check(s.stopped && s.stop_reason === "member left", `the ${label} is stopped as 'member left'`);
   }
+  check(
+    (await scheduleState(s6.id)).stopped && (await scheduleState(contactSched3.id)).stopped,
+    "the schedules they only created are stopped"
+  );
+  check(
+    (await count(`select 1 from public.expenses where id = $1 and hand_edited`, [handEditedGroupRow])) === 1 &&
+      (await futureRows(s6.id)) === 1,
+    "a hand-edited pending row of a stopped group schedule that does not involve them stays, and the others go"
+  );
+  check(
+    (await count(`select 1 from public.contact_expenses where id = $1 and hand_edited`, [handEditedContactRow])) === 1 &&
+      (await contactFuture(contactSched3.id)) === 1,
+    "a hand-edited pending row of a stopped contact schedule that does not involve them stays, and the others go"
+  );
   check((await scheduleState(s3.id)).stopped === false, "a schedule that does not involve them keeps running");
   check((await futureRows(s3.id)) === before.s3Future && (await pastRows(s3.id)) === before.s3Past, "its pending and past rows are untouched");
   check(
@@ -456,6 +651,117 @@ export default async function deleteMyAccount({ db, asUser, signUp, check }) {
     (await asUser(bob.id, () => q(`select * from public.check_emails_registered($1::text[])`, [[alice.email]]))).length === 1,
     "the email is registered again under the new account"
   );
+
+  // ---- A tombstone with a live auth user is not an early return ---------------------
+  {
+    const h = await user("Half");
+    await db.query(`update public.profiles set deleted_at = now(), full_name = 'Deleted user' where id = $1`, [h.id]);
+    check((await authUsers(h)) === 1, "setup: a profile tombstoned by hand while its auth user still exists");
+    check((await errorOf(call(h))) === null, "calling delete_my_account as that user does not raise");
+    check((await authUsers(h)) === 0, "and deletes the still-live auth.users row");
+    check((await errorOf(call(h))) === null && (await authUsers(h)) === 0, "a further call is quiet");
+  }
+
+  // ---- The audit log is cleaned on a best-effort basis -------------------------------
+  {
+    const [a, o, b] = [await user("Aud"), await user("Aud2"), await user("Aud3")];
+    await db.exec(`
+      create table auth.audit_log_entries (
+        id uuid primary key default gen_random_uuid(),
+        payload json,
+        created_at timestamptz default now(),
+        ip_address text default ''
+      )
+    `);
+    try {
+      const row = (label, payload) =>
+        db.query(`insert into auth.audit_log_entries (id, payload) values (gen_random_uuid(), $1::json)`, [json({ label, ...payload })]);
+      const labels = async () => (await q(`select payload->>'label' as l from auth.audit_log_entries order by 1`)).map((r) => r.l);
+      await row("mine-actor", { actor_id: a.id, actor_username: a.email, action: "login" });
+      await row("mine-traits", { action: "user_deleted", traits: { user_id: a.id } });
+      await row("other-actor", { actor_id: o.id, actor_username: o.email, action: "login" });
+      await row("other-traits", { action: "user_deleted", traits: { user_id: o.id } });
+      await row("unrelated", { action: "token_revoked" });
+      const ghostUid = "00000000-0000-4000-8000-0000000000bb";
+      await row("no-account", { actor_id: ghostUid, action: "login" });
+      check((await errorOf(asUser(ghostUid, () => db.query(`select public.delete_my_account()`)))) === null, "a signed-in uid with no profile and no auth user returns quietly");
+      check((await labels()).includes("no-account"), "and does nothing at all (its audit rows are left, the early return holds)");
+      await call(a);
+      check(
+        json(await labels()) === json(["no-account", "other-actor", "other-traits", "unrelated"]),
+        "audit_log_entries rows whose actor_id or traits.user_id is the deleted user go, and only those"
+      );
+      check((await authUsers(a)) === 0 && (await profile(a)).deleted_at !== null, "and the account itself is deleted");
+
+      await db.exec(`
+        create function auth.tmp_refuse_audit() returns trigger language plpgsql as
+          $$ begin raise exception 'audit log is read only'; end $$;
+        create trigger tmp_refuse before delete on auth.audit_log_entries for each row execute function auth.tmp_refuse_audit();
+      `);
+      await row("mine-refused", { actor_id: b.id, actor_username: b.email, action: "login" });
+      const notices = [];
+      let failed;
+      try {
+        failed = await errorOf(asUser(b.id, () => db.query(`select public.delete_my_account()`, [], { onNotice: (n) => notices.push(n.message) })));
+      } finally {
+        await db.exec(`drop trigger tmp_refuse on auth.audit_log_entries; drop function auth.tmp_refuse_audit()`);
+      }
+      check(failed === null, `a refusal by the audit log does not fail the deletion (got: ${failed})`);
+      check((await authUsers(b)) === 0 && (await profile(b)).deleted_at !== null, "the account is still deleted and tombstoned");
+      check(notices.some((m) => /audit log/.test(m)), `and says so with a NOTICE (got: ${notices.join(" | ")})`);
+      check((await labels()).includes("mine-refused"), "the rows it could not delete are left");
+    } finally {
+      await db.exec(`drop table auth.audit_log_entries`);
+    }
+    check((await errorOf(call(await user("NoAudit")))) === null, "with no audit_log_entries table (PGlite, or a project without it) the deletion works");
+  }
+
+  // ---- Net-zero member, open pairwise edges, simplify_debts off ----------------------
+  {
+    const [a, b] = [await user("Ada"), await user("Bea")];
+    const build = async (ghost, simplify) => {
+      const gid = await makeGroup(a, [ghost, b]);
+      await asUser(a.id, () => db.query(`select public.set_group_simplify_debts($1, $2)`, [gid, simplify]));
+      await expense(gid, a, a, 10, [{ userId: a.id, amount: 5 }, { userId: ghost.id, amount: 5 }]);
+      await expense(gid, ghost, ghost, 10, [{ userId: ghost.id, amount: 5 }, { userId: b.id, amount: 5 }]);
+      return gid;
+    };
+    const edges = (gid) =>
+      asUser(a.id, () => q(`select from_user, to_user, amount::text as amount from public.get_group_pairwise_balances($1) order by 1, 2`, [gid]));
+    const g1 = await user("Gus");
+    const off = await build(g1, false);
+    const edgesBefore = await edges(off);
+    const balancesBefore = without(await groupBalances(off, a), g1);
+    check(edgesBefore.length === 2 && Number((await groupBalances(off, a)).find((r) => r.user_id === g1.id).balance) === 0, "setup: the ghost to be has a zero net balance but two open pairwise edges");
+    await call(g1);
+    check(await isMember(off, g1), "simplify off: a net-zero member with open pairwise edges stays as a ghost");
+    check(json(await edges(off)) === json(edgesBefore), "and the edges are unchanged");
+    check(json(without(await groupBalances(off, a), g1)) === json(balancesBefore), "and the other members' balances are identical");
+    check(
+      (await errorOf(pay(off, b, b, g1, 5))) === null && (await errorOf(pay(off, a, g1, a, 5))) === null,
+      "create_payment to and from the ghost works (no 'Both people must be group members')"
+    );
+    check((await edges(off)).length === 0, "and those payments settle every edge");
+
+    const g2 = await user("Gil");
+    const on = await build(g2, true);
+    const onBalances = without(await groupBalances(on, a), g2);
+    await call(g2);
+    check(!(await isMember(on, g2)), "simplify on, same data: the net-zero member is removed as before");
+    check(json(await groupBalances(on, a)) === json(onBalances), "and the other members' balances are identical");
+  }
+
+  // ---- The lock on the caller's profile ----------------------------------------------
+  {
+    const def = (await one(`select regexp_replace(pg_get_functiondef('public.delete_my_account()'::regprocedure), '\\s+', ' ', 'g') as d`)).d;
+    check(
+      /from public\.profiles p where p\.id = v_uid for no key update;/.test(def) && !/where p\.id = v_uid for update/.test(def),
+      "the caller's profile is locked FOR NO KEY UPDATE (a definition check, not a two-connection test)"
+    );
+    const [l1, l2] = [await user("Lock1"), await user("Lock2")];
+    check((await errorOf(call(l1))) === null && (await errorOf(call(l1))) === null && (await errorOf(call(l2))) === null, "two sequential calls (same user twice, then another) all return");
+    check((await authUsers(l1)) === 0 && (await authUsers(l2)) === 0, "and both accounts are deleted");
+  }
 
   // ---- A failure in the middle rolls everything back ------------------------------
   {
@@ -534,11 +840,13 @@ export default async function deleteMyAccount({ db, asUser, signUp, check }) {
     // Idempotent: a tombstone keeps its own deleted_at, and a missing profile does not raise.
     const [u1, u2] = [await user("Una"), await user("Uri")];
     await db.query(`update public.profiles set deleted_at = '2020-01-01T00:00:00Z', full_name = 'Deleted user' where id = $1`, [u1.id]);
-    await db.query(`delete from auth.users where id = $1`, [u1.id]);
+    const tombNotices = [];
+    await db.query(`delete from auth.users where id = $1`, [u1.id], { onNotice: (n) => tombNotices.push(n.message) });
     check(
       (await one(`select deleted_at = '2020-01-01T00:00:00Z' as same from public.profiles where id = $1`, [u1.id])).same,
       "a raw delete of an account that is already a tombstone does not touch it (idempotent)"
     );
+    check(tombNotices.length === 0, `and does not even try to update it (no NOTICE from the profile guard; got: ${tombNotices.join(" | ")})`);
     await db.query(`delete from public.profiles where id = $1`, [u2.id]);
     check((await errorOf(db.query(`delete from auth.users where id = $1`, [u2.id]))) === null, "a raw delete with no profile row does not raise");
     check((await errorOf(db.query(`delete from auth.users where id = gen_random_uuid()`))) === null, "a raw delete that matches nothing is fine");
@@ -562,6 +870,6 @@ export default async function deleteMyAccount({ db, asUser, signUp, check }) {
     check((await profile(w)).deleted_at === null, "the profile is then left as it was");
   }
 
-  const leftover = await count(`select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname in ('auth', 'public') and p.proname like 'tmp\\_%' union all select 1 from pg_class where relname = 'tmp_seen'`);
+  const leftover = await count(`select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname in ('auth', 'public') and p.proname like 'tmp\\_%' union all select 1 from pg_class where relname in ('tmp_seen', 'audit_log_entries')`);
   check(leftover === 0, "the temporary test triggers and functions are gone");
 }
