@@ -51,6 +51,9 @@ must be maintained there by hand:
 - **The `on_auth_user_created` trigger** on `auth.users` (calls
   `public.handle_new_user()`). Triggers on the `auth` schema are not tracked.
   The function itself lives in `04_functions.sql`; only the trigger is manual.
+- **The `on_auth_user_deleted` trigger** on `auth.users` (AFTER DELETE, calls
+  `public._tombstone_deleted_auth_user()`). Same rule: the function is in
+  `04_functions.sql`, the trigger is manual.
 - **The `supabase_realtime` publication** membership
   (`alter publication supabase_realtime add table ...` for expenses,
   expense_splits, payments, group_members, contact_requests,
