@@ -2368,6 +2368,9 @@ $$;
 -- balance broken into per-currency context rows (1-on-1 ledger + each shared
 -- group), un-summed. The client converts each row into the display currency and
 -- sums per contact. full_name/avatar_url repeat across a contact's rows.
+-- contact_deleted_at (the last column) is the contact's profiles.deleted_at: set when
+-- that person deleted their account, so the client can stop offering them in new
+-- expenses (the server refuses a new expense that names a deleted user).
 create or replace function public.get_contacts_with_combined_balances()
 returns table (
   contact_user_id uuid,
@@ -2375,7 +2378,8 @@ returns table (
   avatar_url text,
   currency text,
   balance numeric(12, 2),
-  is_accepted boolean
+  is_accepted boolean,
+  contact_deleted_at timestamptz
 )
 language plpgsql
 security definer
@@ -2417,7 +2421,8 @@ begin
       ci.uid,
       p.full_name,
       p.avatar_url,
-      (ci.uid in (select a.uid from accepted a)) as is_accepted
+      (ci.uid in (select a.uid from accepted a)) as is_accepted,
+      p.deleted_at
     from contact_ids ci
     join public.profiles p on p.id = ci.uid
     where ci.uid <> v_uid
@@ -2428,7 +2433,8 @@ begin
     cr.avatar_url,
     ctx.currency,
     ctx.balance,
-    cr.is_accepted
+    cr.is_accepted,
+    cr.deleted_at
   from contacts_resolved cr
   cross join lateral public.get_contact_balance_contexts(cr.uid) ctx
   where cr.is_accepted or abs(ctx.balance) > 0.005
