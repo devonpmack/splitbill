@@ -71,6 +71,7 @@ export function ScheduleCard({
             <Button
               compact
               textColor={theme.colors.error}
+              accessibilityLabel={`Stop repeating ${schedule.description}`}
               onPress={() => onStop(schedule)}
               disabled={stopDisabled}
             >

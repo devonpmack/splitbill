@@ -38,6 +38,15 @@ jest.mock("@/lib/queries/useRecurringSchedules", () => ({
   useCreateRecurringSchedule: jest.fn(),
 }));
 jest.mock("@/lib/snackbar", () => ({ useSnackbar: jest.fn() }));
+// A plain button in place of the currency menu, which mounts through a Portal.
+jest.mock("@/components/CurrencyPicker", () => {
+  const { Pressable } = require("react-native");
+  return {
+    CurrencyPicker: ({ onChange }: { onChange: (code: string) => void }) => (
+      <Pressable accessibilityLabel="Pick EUR" onPress={() => onChange("EUR")} />
+    ),
+  };
+});
 
 import { router } from "expo-router";
 import { useAuth } from "@/lib/auth";
@@ -520,5 +529,66 @@ describe("Repeat control on the add expense form", () => {
 
     expect(screen.queryByText("Repeat")).toBeNull();
     expect(screen.queryByText("Monthly")).toBeNull();
+  });
+
+  describe("foreign currency note", () => {
+    const NOTE =
+      "Later repeats use the exchange rate on the day each one is created (the last known rate if none is available).";
+
+    it("explains that later repeats use each day's rate", async () => {
+      await renderWithPaper(<AddExpense />);
+      await fireEvent.press(screen.getByLabelText("Pick EUR"));
+      await chooseRepeat("Monthly");
+
+      expect(screen.getByText(NOTE)).toBeTruthy();
+    });
+
+    it("is not shown in the group's own currency", async () => {
+      await renderWithPaper(<AddExpense />);
+      await chooseRepeat("Monthly");
+
+      expect(screen.queryByText(NOTE)).toBeNull();
+    });
+
+    it("is not shown for a foreign currency that does not repeat", async () => {
+      await renderWithPaper(<AddExpense />);
+      await fireEvent.press(screen.getByLabelText("Pick EUR"));
+
+      expect(screen.queryByText(NOTE)).toBeNull();
+    });
+  });
+
+  describe("accessibility", () => {
+    it("groups the frequency chips as radios with the chosen one selected", async () => {
+      await renderWithPaper(<AddExpense />);
+
+      expect(screen.getByLabelText("Repeat frequency")).toHaveProp(
+        "accessibilityRole",
+        "radiogroup"
+      );
+      expect(screen.getAllByRole("radio")).toHaveLength(6);
+      expect(
+        screen.getByRole("radio", { name: "Does not repeat", selected: true })
+      ).toBeTruthy();
+
+      await chooseRepeat("Monthly");
+
+      expect(
+        screen.getByRole("radio", { name: "Monthly", selected: true })
+      ).toBeTruthy();
+      expect(
+        screen.getByRole("radio", { name: "Does not repeat", selected: false })
+      ).toBeTruthy();
+    });
+
+    it("groups the Ends options", async () => {
+      await renderWithPaper(<AddExpense />);
+      await chooseRepeat("Monthly");
+
+      expect(screen.getByLabelText("Ends")).toHaveProp(
+        "accessibilityRole",
+        "radiogroup"
+      );
+    });
   });
 });

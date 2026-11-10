@@ -241,6 +241,19 @@ describe("Repeating screen", () => {
   });
 
   describe("stopping", () => {
+    it("labels each Stop button with the schedule it stops", async () => {
+      setSchedules([
+        schedule(),
+        schedule({ id: "s2", description: "Gym" }),
+      ]);
+      await renderWithPaper(<Repeating />);
+
+      await fireEvent.press(screen.getByLabelText("Stop repeating Gym"));
+
+      expect(mockConfirm.mock.calls[0][0].title).toBe('Stop repeating "Gym"?');
+      expect(screen.getByLabelText("Stop repeating Rent")).toBeTruthy();
+    });
+
     it("confirms first and explains what stays and what goes", async () => {
       await renderWithPaper(<Repeating />);
 

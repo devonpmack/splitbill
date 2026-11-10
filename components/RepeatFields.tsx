@@ -16,6 +16,9 @@ import {
 import { useAppTheme } from "@/lib/theme";
 import type { RecurringFrequency } from "@/lib/types";
 
+const RATE_NOTE =
+  "Later repeats use the exchange rate on the day each one is created (the last known rate if none is available).";
+
 type RepeatFieldsProps = {
   // Null means the expense does not repeat.
   frequency: RecurringFrequency | null;
@@ -27,6 +30,8 @@ type RepeatFieldsProps = {
   onEndDayChange: (day: Date | null) => void;
   count: string;
   onCountChange: (count: string) => void;
+  // The expense is in a currency other than the group's or pair's.
+  isForeignCurrency: boolean;
   // False when the count is not a whole number from 1 to the cap.
   countIsValid: boolean;
   // Where an "After N times" series ends, once the count is valid.
@@ -42,6 +47,7 @@ export function RepeatFields({
   onEndDayChange,
   count,
   onCountChange,
+  isForeignCurrency,
   countIsValid,
   lastOccurrenceLabel,
 }: RepeatFieldsProps) {
@@ -55,18 +61,36 @@ export function RepeatFields({
       >
         Repeat
       </Text>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-        {[null, ...FREQUENCIES].map((option) => (
-          <Chip
-            key={option ?? "none"}
-            mode="outlined"
-            selected={frequency === option}
-            onPress={() => onFrequencyChange(option)}
-          >
-            {option ? frequencyLabel(option) : "Does not repeat"}
-          </Chip>
-        ))}
+      <View
+        accessibilityRole="radiogroup"
+        accessibilityLabel="Repeat frequency"
+        style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}
+      >
+        {[null, ...FREQUENCIES].map((option) => {
+          const label = option ? frequencyLabel(option) : "Does not repeat";
+          return (
+            <Chip
+              key={option ?? "none"}
+              mode="outlined"
+              accessibilityRole="radio"
+              accessibilityLabel={label}
+              selected={frequency === option}
+              onPress={() => onFrequencyChange(option)}
+            >
+              {label}
+            </Chip>
+          );
+        })}
       </View>
+
+      {frequency && isForeignCurrency ? (
+        <Text
+          variant="bodySmall"
+          style={{ color: theme.colors.onSurfaceVariant, marginTop: 8 }}
+        >
+          {RATE_NOTE}
+        </Text>
+      ) : null}
 
       {frequency ? (
         <View style={{ marginTop: 16 }}>
@@ -76,15 +100,17 @@ export function RepeatFields({
           >
             Ends
           </Text>
-          <SegmentedButtons
-            value={ends}
-            onValueChange={(next) => onEndsChange(next as RepeatEnds)}
-            buttons={[
-              { value: "never", label: "Never" },
-              { value: "date", label: "On date" },
-              { value: "count", label: "After" },
-            ]}
-          />
+          <View accessibilityRole="radiogroup" accessibilityLabel="Ends">
+            <SegmentedButtons
+              value={ends}
+              onValueChange={(next) => onEndsChange(next as RepeatEnds)}
+              buttons={[
+                { value: "never", label: "Never" },
+                { value: "date", label: "On date" },
+                { value: "count", label: "After" },
+              ]}
+            />
+          </View>
           {ends === "date" ? (
             <DateField
               value={endDay}

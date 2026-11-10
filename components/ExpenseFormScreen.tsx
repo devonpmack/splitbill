@@ -317,6 +317,7 @@ export function ExpenseFormScreen({
           onEndDayChange={setPickedEndDay}
           count={repeatCount}
           onCountChange={setRepeatCount}
+          isForeignCurrency={entryCurrency !== baseCurrency}
           countIsValid={repeatCountValue !== null}
           lastOccurrenceLabel={
             lastOccurrence
