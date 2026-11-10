@@ -1,7 +1,9 @@
-// get_recent_activity and get_upcoming_expenses also return schedule_id and
-// occurrence_date (the last two columns) so the client can mark a row as
-// repeating and show the schedule's calendar date. Both are null for an expense
-// no schedule made. Neither function returns payments or contact rows.
+// get_recent_activity and get_upcoming_expenses also return schedule_id,
+// occurrence_date and hand_edited (the last three columns, in that order) so the
+// client can mark a row as repeating, show the schedule's calendar date, and
+// tell a hand-moved occurrence (whose date no longer is that calendar day) from
+// an untouched one. The first two are null for an expense no schedule made;
+// hand_edited is false for it. Neither function returns payments or contact rows.
 //
 // Dates are offsets from the database's own UTC today (schedules use tz 'UTC'),
 // so nothing depends on when the check runs.
@@ -83,7 +85,7 @@ export default async function activityScheduleColumns({ db, asUser, signUp, chec
     asUser(uid, () =>
       q(
         `select id, description, schedule_id, to_char(occurrence_date, 'YYYY-MM-DD') as od,
-           pg_typeof(occurrence_date)::text as od_type, pg_typeof(schedule_id)::text as sid_type
+           hand_edited, pg_typeof(occurrence_date)::text as od_type, pg_typeof(schedule_id)::text as sid_type
          from public.${fn}(50)`
       )
     );
@@ -110,6 +112,10 @@ export default async function activityScheduleColumns({ db, asUser, signUp, chec
     "get_upcoming_expenses returns schedule_id and occurrence_date for the future occurrences of a schedule"
   );
   check(
+    [...recent, ...upcoming].every((r) => r.hand_edited === false),
+    "before any edit every row, scheduled or not, reports hand_edited = false in both functions"
+  );
+  check(
     [...recent, ...upcoming].every((r) => r.sid_type === "uuid" && r.od_type === "date"),
     "schedule_id is a uuid and occurrence_date a date in both functions"
   );
@@ -133,6 +139,21 @@ export default async function activityScheduleColumns({ db, asUser, signUp, chec
   check(
     afterEdit && afterEdit.schedule_id === schedule.id && afterEdit.od === rentRow.od,
     "a hand-edited occurrence still reports its schedule"
+  );
+  const editedRows = await read(amy, "get_recent_activity");
+  check(
+    afterEdit.hand_edited === true &&
+      editedRows.filter((r) => r.hand_edited).length === 1 &&
+      editedRows.find((r) => r.id === plain).hand_edited === false,
+    "only the hand-edited occurrence reports hand_edited = true; the other occurrence and the unscheduled expense report false"
+  );
+  const movedId = (await read(amy, "get_upcoming_expenses"))[0].id;
+  await db.query(`update public.expenses set hand_edited = true where id = $1`, [movedId]);
+  const upcomingAfter = await read(amy, "get_upcoming_expenses");
+  check(
+    upcomingAfter.find((r) => r.id === movedId).hand_edited === true &&
+      upcomingAfter.filter((r) => r.hand_edited).length === 1,
+    "get_upcoming_expenses reports hand_edited = true for a hand-edited future occurrence and false for the rest"
   );
   await asUser(amy, () => db.query(`select * from public.stop_recurring_schedule($1)`, [schedule.id]));
   const afterStop = await read(amy, "get_recent_activity");
@@ -178,10 +199,10 @@ export default async function activityScheduleColumns({ db, asUser, signUp, chec
       upcomingFn.args === "p_limit integer",
     "exactly one get_recent_activity(integer) and one get_upcoming_expenses(integer)"
   );
-  const expectedResult = `TABLE(${EXISTING_COLUMNS}, schedule_id uuid, occurrence_date date)`;
+  const expectedResult = `TABLE(${EXISTING_COLUMNS}, schedule_id uuid, occurrence_date date, hand_edited boolean)`;
   check(
     recentFn.result === expectedResult && upcomingFn.result === expectedResult,
-    "both functions keep every existing column in order and append schedule_id, occurrence_date last"
+    "both functions keep every existing column in order and append schedule_id, occurrence_date, hand_edited last, in that order"
   );
   check(
     recentFn.secdef && upcomingFn.secdef && recentFn.acl === untouched.acl && upcomingFn.acl === untouched.acl &&
