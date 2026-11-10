@@ -47,14 +47,17 @@ All connections from the app are encrypted (HTTPS).
 
 ## How long we keep data
 
-We keep your data until it is deleted. You can delete individual expenses and payments in the app. When the last member leaves a group, the group and its history are deleted.
+We keep your data until it is deleted. You can delete individual expenses and payments in the app. When the last member leaves a group, the group and its history are deleted. When you delete your account, some things are removed and some stay in anonymised form, as described in the next section.
 
 ## Your choices and deleting your account
 
 - You can change your name in the app (Account, Edit profile).
 - You can delete expenses and payments, and leave a group once you have no unsettled balance.
-- **Splitfox does not yet have a delete-account button in the app.** To delete your account, email [CONTACT EMAIL] from the address you signed up with and ask us to delete it. We will delete your account, and the personal data tied to it (your email address and name), within [NUMBER OF DAYS] days.
-- **Please know what deletion removes.** Deleting an account also deletes the expenses the account paid for, the payments it made or received, its share of other people's expenses, the one-to-one expenses and payments it has with friends (in either direction), its friends list and group memberships, and the groups it created, and this changes the balances the other members of those groups see. We recommend settling up first, and we can talk you through the options before we delete anything.
+- **Splitfox does not yet have a delete-account button in the app.** To delete your account, email [CONTACT EMAIL] from the address you signed up with and ask us to delete it. We will reply to confirm it is you, and we will delete your account within [NUMBER OF DAYS] days of confirming.
+- **What is removed when an account is deleted:** your email address, your password and your sign-in; your name and picture; your friends list and your contact requests, sent and received; expenses and payments dated in the future that involve you; and any repeating expense you are part of stops. Groups with nobody else in them are deleted. People can no longer find you by email. We also delete the sign-in log entries our sign-in service keeps for your account, where we are able to.
+- **What stays:** the expenses and payments you took part in stay for the other people in those groups and for your friends, so that nobody else's balance changes. Your name on them is shown as "Deleted user" and nothing links them to your email address any more. The amounts, descriptions, dates and notes that you typed stay too. Balances with individual friends stay on their ledger. If you still owed money, or were owed money, in a group, a "Deleted user" entry stays there so those balances do not change.
+- **Please settle up first if you can.** Deleting an account cannot be undone, and the balances people have with you stay owed after it is deleted. We are happy to talk you through the options before we delete anything.
+- Our hosting provider may keep routine backups for a short time, on a schedule we do not control.
 
 ## Children
 
