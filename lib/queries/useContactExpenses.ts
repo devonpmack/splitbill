@@ -19,6 +19,8 @@ const ACTIVITY_CONTACT_EXPENSE_SELECT = `
           amount,
           currency,
           date,
+          schedule_id,
+          occurrence_date,
           paid_by,
           user_lo,
           user_hi,

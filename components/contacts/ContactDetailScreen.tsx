@@ -27,6 +27,7 @@ import { useDisplayCurrency } from "@/lib/display-currency";
 import { useSnackbar } from "@/lib/snackbar";
 import { useConfirm } from "@/lib/confirm";
 import { useAppTheme } from "@/lib/theme";
+import { withSkipNote } from "@/lib/recurrence";
 import { useNow } from "@/lib/useNow";
 import { ActivityList, splitActivityListItems } from "@/components/ActivityList";
 import { DualActionBar } from "@/components/DualActionBar";
@@ -127,10 +128,14 @@ export function ContactDetailScreen({
   const hasActivity = activityItems.length > 0 || upcomingItems.length > 0;
 
   const handleDeleteExpense = (expenseId: string) => {
+    const isOccurrence = !!expenses?.find((e) => e.id === expenseId)
+      ?.schedule_id;
     confirm({
       title: "Delete Expense",
-      message:
+      message: withSkipNote(
         "Are you sure you want to delete this expense? This will remove it for both people involved.",
+        isOccurrence
+      ),
       confirmText: "Delete",
       destructive: true,
       onConfirm: () => {

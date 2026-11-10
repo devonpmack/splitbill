@@ -12,6 +12,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 
 import {
+  useRecentContactActivity,
   useContactExpenses,
   useRecentContactActivity,
   useUpcomingContactActivity,
@@ -34,6 +35,22 @@ const mockedUseAuth = useAuth as unknown as jest.Mock;
 beforeEach(() => {
   jest.clearAllMocks();
   mockedUseAuth.mockReturnValue({ user: { id: "user-1", email: "me@x.com" } });
+});
+
+describe("useRecentContactActivity", () => {
+  it("selects the schedule link so a repeat shows its chip and date", async () => {
+    const builder = queryBuilder({ data: [], error: null });
+    mockedSupabase.from.mockReturnValue(builder);
+
+    const { result } = await renderHook(() => useRecentContactActivity(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const columns = builder.select.mock.calls[0][0] as string;
+    expect(columns).toMatch(/\bschedule_id\b/);
+    expect(columns).toMatch(/\boccurrence_date\b/);
+  });
 });
 
 describe("useContactExpenses", () => {

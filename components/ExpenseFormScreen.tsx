@@ -21,6 +21,7 @@ import {
   deviceTimeZone,
   formatCalendarDay,
   parseCalendarDate,
+  startOfLocalDayISO,
   toLocalDateString,
 } from "@/lib/dates";
 import { useExchangeRates } from "@/lib/exchange-rates";
@@ -47,6 +48,7 @@ export type EditableExpense = {
   currency: string;
   exchange_rate: number;
   date?: string;
+  occurrence_date?: string | null;
   expense_splits?: { user_id: string; amount: number }[] | null;
 };
 
@@ -63,6 +65,14 @@ export type ExpenseFormSubmission = {
   // is in here.
   repeat?: RepeatSubmission;
 };
+
+// A scheduled row is dated by its schedule's calendar day, whichever zone it
+// is edited from.
+function storedDate(expense: EditableExpense | undefined): string | undefined {
+  return expense?.occurrence_date
+    ? startOfLocalDayISO(parseCalendarDate(expense.occurrence_date))
+    : expense?.date;
+}
 
 type ExpenseFormScreenProps = {
   members: MemberWithProfile[];
@@ -108,7 +118,7 @@ export function ExpenseFormScreen({
   );
   const [repeatCount, setRepeatCount] = useState("12");
 
-  const day = useDayPick(isEdit ? existingExpense?.date : undefined);
+  const day = useDayPick(isEdit ? storedDate(existingExpense) : undefined);
   const repeating = !isEdit && frequency !== null;
   const startDay = day.value ?? new Date();
   const startDate = toLocalDateString(startDay);

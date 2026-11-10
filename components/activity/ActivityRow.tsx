@@ -2,8 +2,9 @@ import { View } from "react-native";
 import { Card, IconButton, Text } from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAppTheme } from "@/lib/theme";
-import { formatDay } from "@/lib/dates";
+import { formatDay, rowDay } from "@/lib/dates";
 import { UpcomingTag } from "@/components/UpcomingTag";
+import { RepeatsTag } from "@/components/RepeatsTag";
 import type { ComponentProps } from "react";
 
 type IconName = ComponentProps<typeof MaterialCommunityIcons>["name"];
@@ -29,6 +30,10 @@ type ActivityRowProps = {
   edit?: { label: string; onPress: () => void };
   // Dated in the future: tagged, and the footer says when it starts counting.
   upcoming?: boolean;
+  // An occurrence of a recurring expense: tagged, and dated by the schedule's
+  // calendar day rather than the instant in this device's zone.
+  scheduleId?: string | null;
+  occurrenceDate?: string | null;
 };
 
 export function ActivityRow({
@@ -42,8 +47,11 @@ export function ActivityRow({
   trailing,
   edit,
   upcoming,
+  scheduleId,
+  occurrenceDate,
 }: ActivityRowProps) {
   const theme = useAppTheme();
+  const day = rowDay(date, occurrenceDate);
   const isSecondary = tone === "secondary";
   const onTone = isSecondary
     ? theme.colors.onSecondaryContainer
@@ -127,8 +135,9 @@ export function ActivityRow({
           }}
         >
           {upcoming ? <UpcomingTag /> : null}
+          {scheduleId ? <RepeatsTag scheduleId={scheduleId} /> : null}
           <Text variant="labelSmall" style={{ color: onTone }}>
-            {upcoming ? `Counts from ${formatDay(date)}` : formatDay(date)}
+            {upcoming ? `Counts from ${formatDay(day)}` : formatDay(day)}
           </Text>
         </View>
       </Card.Content>

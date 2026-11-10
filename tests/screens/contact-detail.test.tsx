@@ -52,6 +52,9 @@ jest.mock("@/lib/queries/useContactPayments", () => ({
   useDeleteContactPayment: jest.fn(),
 }));
 jest.mock("@/lib/snackbar", () => ({ useSnackbar: jest.fn() }));
+jest.mock("@/lib/queries/useRecurringSchedules", () => ({
+  useScheduleFrequencies: () => ({ data: { s1: "monthly" } }),
+}));
 jest.mock("@/lib/confirm", () => ({ useConfirm: jest.fn() }));
 
 import { router } from "expo-router";
@@ -326,6 +329,37 @@ describe("ContactDetail screen", () => {
     expect(mockDeleteMutate).toHaveBeenCalledWith(
       { expenseId: "ce-1", contactUserId: "user-2" },
       expect.objectContaining({ onError: expect.any(Function) })
+    );
+  });
+
+  it("says deleting a repeat's occurrence only removes that one", async () => {
+    setup({
+      expenses: [
+        {
+          ...expensesFixture[0],
+          schedule_id: "s1",
+          occurrence_date: "2024-01-01",
+        },
+      ],
+    });
+    await renderWithPaper(<ContactDetail />);
+
+    await fireEvent(screen.getByText("Dinner"), "longPress");
+
+    const confirmArg = mockConfirm.mock.calls[0][0];
+    expect(confirmArg.title).toBe("Delete Expense");
+    expect(confirmArg.message).toContain(
+      "This only removes this one occurrence; the series continues. To stop the series, use Repeating."
+    );
+  });
+
+  it("does not mention a series when deleting an ordinary expense", async () => {
+    await renderWithPaper(<ContactDetail />);
+
+    await fireEvent(screen.getByText("Dinner"), "longPress");
+
+    expect(mockConfirm.mock.calls[0][0].message).not.toMatch(
+      /occurrence|series/
     );
   });
 

@@ -154,6 +154,8 @@ function ExpenseRow({
       subtitle={`${payerLabel(item.paid_by, currentUserId, item.payer)} paid ${formatCurrency(item.amount, item.currency)} in ${item.groups?.name ?? "a group"}`}
       date={item.date}
       upcoming={upcoming}
+      scheduleId={item.schedule_id}
+      occurrenceDate={item.occurrence_date}
       onPress={() => router.push(`/activity/group/${item.group_id}`)}
       trailing={expenseTrailing(summary, item.currency)}
       edit={{
@@ -199,6 +201,8 @@ function ContactExpenseRow({
       subtitle={`${payerLabel(item.paid_by, currentUserId, item.payer)} paid ${formatCurrency(item.amount, item.currency)} \u00b7 with ${otherName}`}
       date={item.date}
       upcoming={upcoming}
+      scheduleId={item.schedule_id}
+      occurrenceDate={item.occurrence_date}
       onPress={() =>
         router.push({
           pathname: "/activity/contacts/[id]",

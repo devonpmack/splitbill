@@ -3,6 +3,8 @@ import { Card, IconButton, Text } from "react-native-paper";
 import { formatCurrency } from "@/lib/utils";
 import { useAppTheme } from "@/lib/theme";
 import { UpcomingTag } from "@/components/UpcomingTag";
+import { RepeatsTag } from "@/components/RepeatsTag";
+import { rowDay } from "@/lib/dates";
 import type { ContactExpenseWithSplits, ExpenseWithSplits } from "@/lib/types";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
@@ -40,7 +42,7 @@ export function ExpenseCard({
   const payerName = isPayer ? "You" : (expense.payer?.full_name ?? "Someone");
   const summaryLabel = isPayer ? "You lent" : "You borrowed";
 
-  const date = new Date(expense.date);
+  const date = rowDay(expense.date, expense.occurrence_date);
   const monthDay = date.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
@@ -94,9 +96,19 @@ export function ExpenseCard({
               >
                 {payerName} paid {formatCurrency(expense.amount, expense.currency)}
               </Text>
-              {upcoming ? (
-                <View style={{ marginTop: 4 }}>
-                  <UpcomingTag />
+              {upcoming || expense.schedule_id ? (
+                <View
+                  style={{
+                    flexDirection: "row",
+                    flexWrap: "wrap",
+                    gap: 6,
+                    marginTop: 4,
+                  }}
+                >
+                  {upcoming ? <UpcomingTag /> : null}
+                  {expense.schedule_id ? (
+                    <RepeatsTag scheduleId={expense.schedule_id} />
+                  ) : null}
                 </View>
               ) : null}
             </View>

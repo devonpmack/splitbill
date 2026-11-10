@@ -167,3 +167,12 @@ export function buildRepeat(input: {
   }
   return { ok: true, repeat: base };
 }
+
+// Deleting one occurrence is a skip: the series goes on and the cursor has
+// already moved past it, so it is not recreated.
+const SKIP_OCCURRENCE_NOTE =
+  "This only removes this one occurrence; the series continues. To stop the series, use Repeating.";
+
+export function withSkipNote(message: string, isOccurrence: boolean): string {
+  return isOccurrence ? `${message} ${SKIP_OCCURRENCE_NOTE}` : message;
+}

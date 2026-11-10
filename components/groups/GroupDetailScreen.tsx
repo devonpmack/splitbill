@@ -19,6 +19,7 @@ import {
   sortMembersSelfFirst,
 } from "@/lib/utils";
 import { useRealtimeSubscription } from "@/lib/realtime";
+import { withSkipNote } from "@/lib/recurrence";
 import { useSnackbar } from "@/lib/snackbar";
 import { useConfirm } from "@/lib/confirm";
 import { useAppTheme } from "@/lib/theme";
@@ -117,9 +118,14 @@ export function GroupDetailScreen({
   ]);
 
   const handleDeleteExpense = (expenseId: string) => {
+    const isOccurrence = !!expenses?.find((e) => e.id === expenseId)
+      ?.schedule_id;
     confirm({
       title: "Delete Expense",
-      message: "Are you sure you want to delete this expense? This will remove it for ALL people involved.",
+      message: withSkipNote(
+        "Are you sure you want to delete this expense? This will remove it for ALL people involved.",
+        isOccurrence
+      ),
       confirmText: "Delete",
       destructive: true,
       onConfirm: () => {

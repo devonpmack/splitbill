@@ -396,6 +396,39 @@ describe("AddExpense screen", () => {
         expect(mockUpdateMutateAsync.mock.calls[0][0].date).toBeUndefined();
       });
 
+      it("prefills a scheduled row with its schedule's day, not the instant in this zone", async () => {
+        (useExpenses as jest.Mock).mockReturnValue({
+          data: [
+            {
+              id: "exp-1",
+              description: "Rent",
+              amount: 30,
+              paid_by: "u1",
+              split_type: "equal",
+              schedule_id: "s1",
+              occurrence_date: "2026-11-05",
+              date: new Date(2026, 10, 2, 15).toISOString(),
+              expense_splits: [
+                { user_id: "u1", amount: 15 },
+                { user_id: "u2", amount: 15 },
+              ],
+            },
+          ],
+        });
+        await renderWithPaper(<AddExpense />);
+
+        expect(screen.getByTestId("date-field")).toHaveProp(
+          "value",
+          "11/05/2026"
+        );
+        await fireEvent.press(screen.getByText("Save Changes"));
+
+        await waitFor(() =>
+          expect(mockUpdateMutateAsync).toHaveBeenCalledTimes(1)
+        );
+        expect(mockUpdateMutateAsync.mock.calls[0][0].date).toBeUndefined();
+      });
+
       it("sends the start of a newly picked day", async () => {
         await renderWithPaper(<AddExpense />);
 

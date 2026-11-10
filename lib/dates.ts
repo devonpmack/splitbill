@@ -37,6 +37,13 @@ export function parseCalendarDate(day: string): Date {
   return new Date(year, month - 1, date);
 }
 
+// The day a row is shown under. A scheduled row carries its schedule's
+// calendar date, which every viewer sees as is; any other row is dated by its
+// instant in the viewer's own zone.
+export function rowDay(date: string, occurrenceDate?: string | null): Date {
+  return occurrenceDate ? parseCalendarDate(occurrenceDate) : new Date(date);
+}
+
 export function formatCalendarDay(day: string): string {
   return formatDay(parseCalendarDate(day));
 }

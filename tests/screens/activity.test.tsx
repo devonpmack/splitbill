@@ -34,6 +34,9 @@ jest.mock("@/lib/queries/useContactPayments", () => ({
 jest.mock("@/lib/queries/useGroups", () => ({
   useRecentGroupSettingChanges: jest.fn(),
 }));
+jest.mock("@/lib/queries/useRecurringSchedules", () => ({
+  useScheduleFrequencies: () => ({ data: {} }),
+}));
 
 import { router } from "expo-router";
 import { useAuth } from "@/lib/auth";
