@@ -54,7 +54,7 @@ We keep your data until it is deleted. You can delete individual expenses and pa
 - You can change your name in the app (Account, Edit profile).
 - You can delete expenses and payments, and leave a group once you have no unsettled balance.
 - **Evenpot does not yet have a delete-account button in the app.** To delete your account, email [CONTACT EMAIL] from the address you signed up with and ask us to delete it. We will delete your account, and the personal data tied to it (your email address and name), within [NUMBER OF DAYS] days.
-- **Please know what deletion removes.** Deleting an account also deletes the expenses the account paid for, the payments it made or received, its share of other people's expenses, and the groups it created, and this changes the balances the other members of those groups see. We recommend settling up first, and we can talk you through the options before we delete anything.
+- **Please know what deletion removes.** Deleting an account also deletes the expenses the account paid for, the payments it made or received, its share of other people's expenses, the one-to-one expenses and payments it has with friends (in either direction), its friends list and group memberships, and the groups it created, and this changes the balances the other members of those groups see. We recommend settling up first, and we can talk you through the options before we delete anything.
 
 ## Children
 
