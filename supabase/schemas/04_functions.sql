@@ -108,7 +108,9 @@ $$;
 -- it. That predicate has to run before the row cap: applying a limit first and
 -- filtering on the client pushed the caller's own items out of the feed in busy
 -- groups. Nested payer/group/split data is returned as jsonb so the shape
--- matches what the client already renders.
+-- matches what the client already renders. schedule_id and occurrence_date (the
+-- last two columns) say which recurring schedule made the expense and for which
+-- calendar date; both are null for an expense no schedule made.
 create or replace function public.get_recent_activity(p_limit int default 50)
 returns table (
   id uuid,
@@ -120,7 +122,9 @@ returns table (
   group_id uuid,
   payer jsonb,
   groups jsonb,
-  expense_splits jsonb
+  expense_splits jsonb,
+  schedule_id uuid,
+  occurrence_date date
 )
 language plpgsql
 security definer
@@ -153,7 +157,9 @@ begin
         where es.expense_id = e.id
       ),
       '[]'::jsonb
-    ) as expense_splits
+    ) as expense_splits,
+    e.schedule_id,
+    e.occurrence_date
   from public.expenses e
   join public.groups g on g.id = e.group_id
   join public.profiles pr on pr.id = e.paid_by
@@ -187,7 +193,9 @@ returns table (
   group_id uuid,
   payer jsonb,
   groups jsonb,
-  expense_splits jsonb
+  expense_splits jsonb,
+  schedule_id uuid,
+  occurrence_date date
 )
 language plpgsql
 security definer
@@ -220,7 +228,9 @@ begin
         where es.expense_id = e.id
       ),
       '[]'::jsonb
-    ) as expense_splits
+    ) as expense_splits,
+    e.schedule_id,
+    e.occurrence_date
   from public.expenses e
   join public.groups g on g.id = e.group_id
   join public.profiles pr on pr.id = e.paid_by
