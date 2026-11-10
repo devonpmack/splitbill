@@ -121,7 +121,9 @@ create table public.payments (
   -- the columns mirror expenses so a foreign-currency payment can be recorded.
   currency text not null default 'USD',
   exchange_rate numeric(18, 8) not null default 1 check (exchange_rate > 0),
-  base_amount numeric(12, 2) not null default 0 check (base_amount >= 0)
+  base_amount numeric(12, 2) not null default 0 check (base_amount >= 0),
+  -- When the payment counts toward balances; may be in the future.
+  date timestamptz not null default now()
 );
 
 create table public.group_simplify_debts_events (
