@@ -48,7 +48,7 @@ supabase db push
 ```
 
 `link` asks for the database password from step 1. `db push` lists the
-migrations in `supabase/migrations/` (27 at the time of writing) and asks you to confirm; answer yes.
+migrations in `supabase/migrations/` and asks you to confirm; answer yes.
 
 > **Do not run `supabase migration repair --status applied 000`.** That line in
 > `supabase/schemas/README.md` was written for the original project, where
@@ -58,11 +58,12 @@ migrations in `supabase/migrations/` (27 at the time of writing) and asks you to
 > exist`) and leaves you with a half-built database. If you did run it, undo it
 > with `supabase migration repair --status reverted 000` and push again.
 
-To check it worked, open *Table Editor*: you should see 13 tables in the
-`public` schema: `profiles`, `groups`, `group_members`, `expenses`,
+To check it worked, open *Table Editor*: the `public` schema should list the
+app's tables: `profiles`, `groups`, `group_members`, `expenses`,
 `expense_splits`, `payments`, `contacts`, `contact_requests`, `contact_expenses`,
-`contact_expense_splits`, `contact_payments`, `contact_pair_settings` and
-`group_simplify_debts_events`.
+`contact_expense_splits`, `contact_payments`, `contact_pair_settings`,
+`group_simplify_debts_events` and `recurring_schedules`, plus any tables later
+migrations add.
 
 No CLI? You can instead paste the files into *SQL Editor* one at a time, in
 filename order, starting with `000_full_setup.sql`. The CLI is better because it
@@ -94,9 +95,9 @@ Under *Authentication*:
 ## 4. Realtime
 
 There is nothing to switch on. The migrations add `expenses`, `expense_splits`,
-`payments`, `group_members` and `contact_requests` to the `supabase_realtime`
-publication. To confirm, open *Database → Publications* and check that
-`supabase_realtime` lists those five tables. Realtime still applies each user's
+`payments`, `group_members`, `contact_requests` and `recurring_schedules` to the
+`supabase_realtime` publication. To confirm, open *Database → Publications* and
+check that `supabase_realtime` lists those tables. Realtime still applies each user's
 row-level security, so people only receive changes to groups they belong to.
 
 ### Repeating expenses and pg_cron (optional)
@@ -176,7 +177,7 @@ npm run check:migrations
 This builds an empty in-memory Postgres, applies every migration in order,
 runs a sign-up, create-group, add-expense and balances flow through the real
 RPCs as separate users, checks that row-level security hides a group from a
-non-member and that clients cannot write tables directly, checks that the five
+non-member and that clients cannot write tables directly, checks that the
 realtime tables are published, and checks that `supabase/schemas/` and
 `supabase/migrations/` describe the same database. It needs no Docker and no
 Supabase account, and it runs in CI. It runs on a newer Postgres than a Supabase
