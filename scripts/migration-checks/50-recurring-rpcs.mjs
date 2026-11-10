@@ -146,6 +146,28 @@ export default async function recurringRpcs({ db, asUser, signUp, check }) {
     "the splits payload is stored as sent"
   );
 
+  // ---- Create: only [{userId, amount}] is stored, normalised -------------------------
+  const junk = await create(amy, {
+    start: farStart, description: "Junk keys",
+    splits: [
+      { userId: amy.toUpperCase(), amount: "15.004", baseAmount: 999, junk: "x".repeat(200000), nested: { a: [1, 2] } },
+      { userId: ben, amount: 14.996, note: "hi" },
+    ],
+  });
+  check(
+    junk.splits.length === 2 && junk.splits.every((e) => same(Object.keys(e).sort(), ["amount", "userId"])),
+    "stored splits contain only userId and amount: baseAmount and every other key (a 200 KB one included) is dropped"
+  );
+  check(
+    junk.splits[0].userId === amy && junk.splits[1].userId === ben &&
+      Number(junk.splits[0].amount) === 15 && Number(junk.splits[1].amount) === 15,
+    "stored splits hold the lowercase uuid text from the cast and amounts rounded to 2 places"
+  );
+  check(
+    (await q(`select pg_column_size(splits) as n from public.recurring_schedules where id = $1`, [junk.id]))[0].n < 500,
+    "the stored splits column stays small however much junk was sent"
+  );
+
   // ---- Create: starting today materialises the first occurrence at once -----------
   const today = await day(0);
   const todays = await create(amy, { start: today, description: "Today rent" });
@@ -251,6 +273,12 @@ export default async function recurringRpcs({ db, asUser, signUp, check }) {
   await refuses("a split user outside the group", "Every split user must be a group member", amy, { splits: [{ userId: amy, amount: 15 }, { userId: dee, amount: 15 }] });
   await refuses("splits that do not add up", "Split amounts must add up to the expense total", amy, { splits: half(amy, ben, 10) });
   await refuses("a negative split", "Split amount cannot be negative", amy, { splits: [{ userId: amy, amount: 40 }, { userId: ben, amount: -10 }] });
+  await refuses("a NaN amount", "Expense amount must be greater than zero", amy, { amount: "NaN" });
+  await refuses("an infinite amount", "Expense amount must be greater than zero", amy, { amount: "Infinity" });
+  await refuses("a NaN exchange rate", "Exchange rate must be greater than zero", amy, { rate: "NaN" });
+  await refuses("an infinite exchange rate", "Exchange rate must be greater than zero", amy, { rate: "Infinity" });
+  await refuses("a NaN split amount", "Each split needs a user and an amount", amy, { splits: [{ userId: amy, amount: "NaN" }, { userId: ben, amount: 30 }] });
+  await refuses("an infinite split amount", "Each split needs a user and an amount", amy, { splits: [{ userId: amy, amount: "Infinity" }, { userId: ben, amount: 30 }] });
   await refuses("a missing split type", "Split type is required", amy, { splitType: null });
   await refuses("an exchange rate of zero", "Exchange rate must be greater than zero", amy, { rate: 0 });
   await refuses("an unknown frequency", "Frequency must be daily, weekly, biweekly, monthly or yearly", amy, { frequency: "hourly" });
@@ -389,14 +417,14 @@ export default async function recurringRpcs({ db, asUser, signUp, check }) {
 
   // ---- Stop: authorization ---------------------------------------------------------------
   check(
-    (await errorOf(stop(dee, future.id))) === "You are not a member of this group" &&
+    (await errorOf(stop(dee, future.id))) === "Schedule not found" &&
       (await q(`select stopped_at from public.recurring_schedules where id = $1`, [future.id]))[0].stopped_at === null,
-    "a non-member cannot stop a group schedule"
+    "a non-member cannot stop a group schedule, and gets the same 'Schedule not found' as for a missing id (no existence leak)"
   );
   check(
-    (await errorOf(stop(ben, fromOther.id))) === "You are not a participant in this schedule" &&
+    (await errorOf(stop(ben, fromOther.id))) === "Schedule not found" &&
       (await q(`select stopped_at from public.recurring_schedules where id = $1`, [fromOther.id]))[0].stopped_at === null,
-    "a non-participant cannot stop a contact schedule"
+    "a non-participant cannot stop a contact schedule and gets 'Schedule not found' too"
   );
   check(
     (await errorOf(stop(amy, "00000000-0000-0000-0000-000000000000"))) === "Schedule not found",
@@ -437,7 +465,6 @@ export default async function recurringRpcs({ db, asUser, signUp, check }) {
       (await q(`select 1 from public.expenses where group_id = $1 and date > now()`, [lg])).length === 0,
     "leave_group clause 2 fixture: an active schedule and no future rows at all"
   );
-  check((await leave(amy, lg)) === LEAVE_MSG, "leave_group clause 2: the creator of an active schedule is refused");
   check((await leave(ben, lg)) === LEAVE_MSG, "leave_group clause 2: the payer of an active schedule is refused");
   check((await leave(cat, lg)) === LEAVE_MSG, "leave_group clause 2: a split-only member of an active schedule is refused");
   check(
@@ -462,6 +489,49 @@ export default async function recurringRpcs({ db, asUser, signUp, check }) {
   check(
     (await leave(cat, lg)) === null && !(await isMember(cat, lg)),
     "leave_group: once every active schedule is stopped the split member can leave (a completed one does not block)"
+  );
+
+  // Uppercase userId: it casts to a uuid, so it must block exactly like the lowercase one.
+  const lgU = await makeGroup(amy, "Leave uppercase", ["rr-ben@example.com", "rr-cat@example.com"]);
+  await create(amy, {
+    group: lgU, paidBy: amy, splits: [{ userId: cat.toUpperCase(), amount: 15 }, { userId: amy, amount: 15 }],
+    start: await day(20), description: "Uppercase split",
+  });
+  check(
+    (await leave(cat, lgU)) === LEAVE_MSG && (await isMember(cat, lgU)),
+    "leave_group: a split user sent in UPPERCASE is still refused (create stores the normalised uuid)"
+  );
+  const lgU2 = await makeGroup(amy, "Leave raw uppercase", ["rr-ben@example.com"]);
+  await db.query(
+    `insert into public.recurring_schedules (kind, group_id, created_by, paid_by, description, amount, last_exchange_rate,
+       splits, start_date, tz, frequency)
+     values ('group', $1, $2, $2, 'Raw', 30, 1, $3::jsonb, (now() at time zone 'UTC')::date + 20, 'UTC', 'monthly')`,
+    [lgU2, amy, JSON.stringify([{ userId: ben.toUpperCase(), amount: 30 }])]
+  );
+  check(
+    (await leave(ben, lgU2)) === LEAVE_MSG,
+    "leave_group compares split users as uuids: a stored UPPERCASE userId (not written by create) still blocks"
+  );
+
+  // created_by is audit only: a creator who neither pays nor is split can leave, the series goes on.
+  const lgC = await makeGroup(amy, "Leave creator", ["rr-ben@example.com", "rr-cat@example.com"]);
+  const creatorOnly = await create(amy, {
+    group: lgC, paidBy: ben, splits: half(ben, cat), start: await day(20), description: "Creator only",
+  });
+  check(
+    (await leave(amy, lgC)) === null && !(await isMember(amy, lgC)),
+    "leave_group: the creator of an active schedule who is neither payer nor split user can leave"
+  );
+  check(
+    (await q(`select stopped_at from public.recurring_schedules where id = $1`, [creatorOnly.id]))[0].stopped_at === null &&
+      (await q(`select public._materialise_one($1, now() + interval '25 days') as n`, [creatorOnly.id]))[0].n === 1,
+    "the series the departed creator made stays active and the engine still creates its occurrences"
+  );
+  const lgC2 = await makeGroup(amy, "Leave creator payer", ["rr-ben@example.com"]);
+  await create(amy, { group: lgC2, paidBy: amy, splits: half(amy, ben), start: await day(20), description: "Creator pays" });
+  check(
+    (await leave(amy, lgC2)) === LEAVE_MSG,
+    "leave_group: a creator who is also the payer is refused"
   );
 
   // A schedule in another group, or a contact schedule, does not block this one.

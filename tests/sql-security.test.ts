@@ -560,6 +560,9 @@ describe("SQL security guards", () => {
     expect(create).toMatch(/_insert_group_expense\(\s*v_uid,/i);
     expect(create).toMatch(/_insert_contact_expense\(\s*v_uid,/i);
     expect(create).toMatch(/created_by[\s\S]*?values \([\s\S]*?v_uid/i);
+    // Only the normalised splits are stored, never the client's payload.
+    expect(create).toMatch(/\(\(t\.e->>'userId'\)::uuid\)::text/i);
+    expect(create).toMatch(/p_split_type, v_norm,/i);
 
     const stop = functionBody(functions, "stop_recurring_schedule");
     expect(stop).toMatch(/raise exception 'Not authenticated'/i);
@@ -572,7 +575,10 @@ describe("SQL security guards", () => {
     expect(leave).toMatch(/e\.date > now\(\)/i);
     expect(leave).toMatch(/py\.date > now\(\)/i);
     expect(leave).toMatch(/from public\.recurring_schedules s[\s\S]*?s\.stopped_at is null/i);
-    expect(leave).toMatch(/s\.created_by = v_uid/i);
     expect(leave).toMatch(/s\.paid_by = v_uid/i);
+    // Split users are compared as uuids (not as text), and the creator, who is
+    // audit only, does not block.
+    expect(leave).toMatch(/\(sp->>'userId'\)::uuid = v_uid/i);
+    expect(leave).not.toMatch(/s\.created_by/i);
   });
 });
