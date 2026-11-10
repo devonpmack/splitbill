@@ -5,12 +5,24 @@
 -- type, payer and the limits change on their own.
 --
 -- Only the future changes. A pending occurrence is a row of the schedule with
--- date > now() that nobody edited by hand (hand_edited = false). Edits rewrite
--- the pending rows through the private update helpers with
+-- date > now() that nobody edited by hand (hand_edited = false); a row dated
+-- exactly now() is not pending (the balance predicate is date <= now()). Edits
+-- rewrite the pending rows through the private update helpers with
 -- p_mark_hand_edited = false, so they stay rewritable by the next edit; past
--- rows and hand-edited rows are never touched. Rewritten rows convert at the
--- schedule's current rate (the same one the engine uses) and the stored splits
--- are normalised to {userId, amount, baseAmount} at that rate.
+-- rows and hand-edited rows are never touched.
+--
+-- Rewritten rows are not repriced: each keeps its own exchange_rate (the rate
+-- it was created at) and its base amounts are recomputed at that rate when the
+-- amount changes. Only occurrences the engine creates later use the schedule's
+-- current rate (last_exchange_rate). The stored payload's splits are normalised
+-- to [{userId (lowercase uuid text), amount, baseAmount}], nothing else, with
+-- baseAmount at the current rate: that is the payload for the next occurrences
+-- (the engine recomputes it anyway).
+--
+-- A finished schedule (stop_reason 'completed': max_count or end_date reached)
+-- can still have its pending rows rewritten, but its limits cannot be changed.
+-- A schedule stopped by a member, because someone left, or as invalid cannot be
+-- edited at all.
 --
 -- Limits: lowering end_date or max_count deletes the pending, non-hand-edited
 -- rows beyond the new limit; a hand-edited pending row stays and counts at its
@@ -22,7 +34,10 @@
 -- it creates anything now due and applies completion.
 --
 -- The schedule row is locked first (select ... for update), which serialises
--- this against cron, the app-open catch-up and stop. Everything is one
+-- this against cron, the app-open catch-up and stop; it is taken only after the
+-- caller is known to be a member (a non-member and a missing id get the same
+-- 'Schedule not found' and block nothing) and the stopped state is checked
+-- again under it. Everything is one
 -- transaction: any failure rolls back the edit, the deletions and the rewrites.
 create or replace function public.update_recurring_schedule(
   p_schedule_id uuid,
@@ -61,7 +76,10 @@ declare
   v_split jsonb;
   v_split_user uuid;
   v_split_amount numeric(12, 2);
+  v_split_raw numeric;
   v_split_total numeric(12, 2) := 0;
+  v_clean jsonb := '[]'::jsonb;
+  v_row_splits jsonb;
   v_seen uuid[] := '{}';
   v_first_beyond date;
   v_row record;
@@ -70,7 +88,7 @@ begin
     raise exception 'Not authenticated';
   end if;
 
-  select * into v_s from public.recurring_schedules where id = p_schedule_id for update;
+  select * into v_s from public.recurring_schedules where id = p_schedule_id;
   if found then
     v_member := coalesce(
       case when v_s.kind = 'group'
@@ -84,12 +102,26 @@ begin
     raise exception 'Schedule not found';
   end if;
 
+  select * into v_s from public.recurring_schedules where id = p_schedule_id for update;
+  if not found then
+    raise exception 'Schedule not found';
+  end if;
+
   if v_s.stopped_at is not null then
-    raise exception 'This repeating item has stopped and can no longer be edited';
+    if v_s.stop_reason is distinct from 'completed' then
+      raise exception 'This repeating item has stopped and can no longer be edited';
+    end if;
+    if p_end_date is not null or p_max_count is not null
+      or coalesce(p_clear_end_date, false) or coalesce(p_clear_max_count, false) then
+      raise exception 'This repeating item has finished, so its limits cannot be changed';
+    end if;
   end if;
 
   if (p_amount is null) <> (p_splits is null) then
     raise exception 'Amount and splits must be changed together';
+  end if;
+  if p_amount = 'NaN'::numeric or p_amount in ('Infinity'::numeric, '-Infinity'::numeric) then
+    raise exception 'Expense amount must be a valid number';
   end if;
   if coalesce(p_clear_end_date, false) and p_end_date is not null then
     raise exception 'Choose either a new end date or clear it, not both';
@@ -148,10 +180,14 @@ begin
   for v_split in select value from jsonb_array_elements(v_input)
   loop
     v_split_user := (v_split->>'userId')::uuid;
-    v_split_amount := round((v_split->>'amount')::numeric, 2);
-    if v_split_user is null or v_split_amount is null then
+    v_split_raw := (v_split->>'amount')::numeric;
+    if v_split_user is null or v_split_raw is null then
       raise exception 'Every split needs a user and an amount';
     end if;
+    if v_split_raw = 'NaN'::numeric or v_split_raw in ('Infinity'::numeric, '-Infinity'::numeric) then
+      raise exception 'Split amount must be a valid number';
+    end if;
+    v_split_amount := round(v_split_raw, 2);
     if v_split_amount < 0 then
       raise exception 'Split amount cannot be negative';
     end if;
@@ -167,6 +203,9 @@ begin
       raise exception 'Every split user must be a participant';
     end if;
     v_split_total := v_split_total + v_split_amount;
+    v_clean := v_clean || jsonb_build_array(
+      jsonb_build_object('userId', lower(v_split_user::text), 'amount', v_split_amount)
+    );
   end loop;
   if v_split_total <> v_amount then
     raise exception 'Split amounts must add up to the expense total';
@@ -177,7 +216,7 @@ begin
   else
     v_rate := public._schedule_rate(v_s);
   end if;
-  v_stored := public._convert_splits_to_base(v_input, v_rate, round(v_amount * v_rate, 2));
+  v_stored := public._convert_splits_to_base(v_clean, v_rate, round(v_amount * v_rate, 2));
 
   update public.recurring_schedules
   set
@@ -217,26 +256,32 @@ begin
     or p_split_type is not null or p_paid_by is not null then
     if v_s.kind = 'group' then
       for v_row in
-        select e.id from public.expenses e
+        select e.id, e.currency, e.exchange_rate from public.expenses e
         where e.schedule_id = v_s.id and e.date > now() and not e.hand_edited
         order by e.occurrence_date
         for update
       loop
+        v_row_splits := public._convert_splits_to_base(
+          v_clean, v_row.exchange_rate, round(v_amount * v_row.exchange_rate, 2)
+        );
         perform public._update_group_expense(
           v_uid, v_row.id, v_paid_by, v_amount, v_description, v_category, v_split_type,
-          v_stored, null, v_s.currency, v_rate, false
+          v_row_splits, null, v_row.currency, v_row.exchange_rate, false
         );
       end loop;
     else
       for v_row in
-        select e.id from public.contact_expenses e
+        select e.id, e.currency, e.exchange_rate from public.contact_expenses e
         where e.schedule_id = v_s.id and e.date > now() and not e.hand_edited
         order by e.occurrence_date
         for update
       loop
+        v_row_splits := public._convert_splits_to_base(
+          v_clean, v_row.exchange_rate, round(v_amount * v_row.exchange_rate, 2)
+        );
         perform public._update_contact_expense(
           v_uid, v_row.id, v_paid_by, v_amount, v_description, v_category, v_split_type,
-          v_stored, null, v_s.currency, v_rate, false
+          v_row_splits, null, v_row.currency, v_row.exchange_rate, false
         );
       end loop;
     end if;

@@ -255,6 +255,13 @@ export default async function updateRecurring({ db, asUser, signUp, rejects, che
     ["the same split user twice", { amount: 10, splits: [{ userId: dan, amount: 5 }, { userId: dan, amount: 5 }] }, /only once/],
     ["an empty split list", { amount: 10, splits: [] }, /At least one split is required/],
     ["a payer outside the group", { paid_by: gus }, /Expense payer must be a group member/],
+    ["a NaN amount", { amount: "NaN", splits: [{ userId: dan, amount: 10 }] }, /Expense amount must be a valid number/],
+    ["an Infinity amount", { amount: "Infinity", splits: [{ userId: dan, amount: 10 }] }, /Expense amount must be a valid number/],
+    ["a negative Infinity amount", { amount: "-Infinity", splits: [{ userId: dan, amount: 10 }] }, /Expense amount must be a valid number/],
+    ["a NaN split amount", { amount: 10, splits: [{ userId: dan, amount: "NaN" }, { userId: erin, amount: 10 }] }, /Split amount must be a valid number/],
+    ["an Infinity split amount", { amount: 10, splits: [{ userId: dan, amount: "Infinity" }, { userId: erin, amount: 10 }] }, /Split amount must be a valid number/],
+    ["the same split user twice in different case", { amount: 10, splits: [{ userId: dan.toUpperCase(), amount: 5 }, { userId: dan, amount: 5 }] }, /only once/],
+    ["a split user that is not a uuid", { amount: 10, splits: [{ userId: "not-a-uuid", amount: 10 }] }, /invalid input syntax for type uuid/],
     ["a zero max_count", { max_count: 0 }, /at least 1/],
     ["an end date before the start date", { end_date: "2019-12-31" }, /cannot be before the start date/],
     ["an end date together with clearing it", { end_date: "2040-01-01", clear_end_date: true }, /either a new end date or clear it/],
@@ -345,8 +352,8 @@ export default async function updateRecurring({ db, asUser, signUp, rejects, che
     "lowering the limit does not touch past rows"
   );
   check(
-    /stopped and can no longer be edited/.test(await msg(() => upd(dan, M, { max_count: 30 }))),
-    "a completed schedule cannot be raised again"
+    /finished, so its limits cannot be changed/.test(await msg(() => upd(dan, M, { max_count: 30 }))),
+    "the limits of a completed schedule cannot be raised again"
   );
 
   const Z = await mk({ max_count: 20, description: "Below made" });
@@ -468,6 +475,197 @@ export default async function updateRecurring({ db, asUser, signUp, rejects, che
   check(
     (await agrees(G)) && (await sched(G)).stopped_at === null,
     "an edit that replaces the departed member's split succeeds and the series is consistent again"
+  );
+
+
+  // ---- A finished (completed) schedule: payload edits still reach its pending rows ----------------
+  const S = await mk({ max_count: 7, description: "Finished" });
+  await one(S, HZ);
+  const sRow0 = await sched(S);
+  const sBefore = await snapshot(S);
+  check(
+    sRow0.stop_reason === "completed" && sRow0.stopped_at !== null && Number(sRow0.next_index) === 7 &&
+      sBefore.filter((r) => r.pending).length >= 2 && sBefore.filter((r) => !r.pending).length >= 2,
+    "fixture: a schedule that reached max_count is completed while its last occurrences are still pending"
+  );
+  const sHand = sBefore.filter((r) => r.pending).pop();
+  await handEdit(dan, sHand.id, "Mine too");
+  const sHandBefore = (await snapshot(S)).find((r) => r.id === sHand.id);
+  const sRet = await upd(dan, S, {
+    description: "Finished v2", category: "Housing", amount: 60, split_type: "exact", paid_by: erin,
+    splits: [{ userId: dan, amount: 40 }, { userId: erin, amount: 20 }],
+  });
+  const sAfter = await snapshot(S);
+  check(
+    sAfter.filter(rewritable).length >= 1 &&
+      sAfter.filter(rewritable).every((r) => r.row.description === "Finished v2" && Number(r.row.amount) === 60 &&
+        r.row.paid_by === erin && r.row.category === "Housing" && r.row.split_type === "exact") && (await agrees(S)),
+    "a completed schedule's pending rows are rewritten by description, category, amount+splits, payer and split type edits"
+  );
+  check(
+    same(sAfter.filter((r) => !r.pending), sBefore.filter((r) => !r.pending)) &&
+      same(sAfter.find((r) => r.id === sHand.id), sHandBefore),
+    "...while its past rows and its hand-edited pending row stay as they were"
+  );
+  check(
+    sRet.stop_reason === "completed" && same(sRet.stopped_at, sRow0.stopped_at) && sRet.max_count === 7 &&
+      Number(sRet.next_index) === 7 && sRet.description === "Finished v2",
+    "the edit leaves the schedule completed (same stopped_at, limits and cursor)"
+  );
+  const sFrozen = await sched(S);
+  const sRowsFrozen = await snapshot(S);
+  for (const [name, args] of [
+    ["a new end date", { end_date: await fut(30) }],
+    ["a higher max_count", { max_count: 30 }],
+    ["a lower max_count", { max_count: 3 }],
+    ["clearing the end date", { clear_end_date: true }],
+    ["clearing the max_count", { clear_max_count: true }],
+    ["a limit together with a payload change", { description: "Sneaky", max_count: 30 }],
+  ]) {
+    const m = await msg(() => upd(dan, S, args));
+    check(
+      /This repeating item has finished, so its limits cannot be changed/.test(m) &&
+        same(await sched(S), sFrozen) && same(await snapshot(S), sRowsFrozen),
+      `a completed schedule refuses ${name} with the 'finished' message and changes nothing`
+    );
+  }
+
+  // ---- Stopped for any other reason: refused, whatever the edit ---------------------------------------
+  const viaRpc = await mk({ description: "Stopped by a member" });
+  await one(viaRpc, HZ);
+  await asUser(erin, () => db.query(`select public.stop_recurring_schedule($1)`, [viaRpc]));
+  const stopMsgs = [await msg(() => upd(dan, viaRpc, { description: "Nope" })), await msg(() => upd(dan, viaRpc, { max_count: 5 }))];
+  check(
+    stopMsgs.every((m) => /This repeating item has stopped and can no longer be edited/.test(m)),
+    `a schedule stopped through stop_recurring_schedule is refused for payload and limit edits alike (${(await sched(viaRpc)).stop_reason})`
+  );
+  const far = await fut(30);
+  for (const reason of ["stopped", "member left", "invalid"]) {
+    const id = await mk({ description: `Reason ${reason}` });
+    await one(id, HZ);
+    await db.query(`update public.recurring_schedules set stopped_at = now(), stop_reason = $2 where id = $1`, [id, reason]);
+    const frozen = await snapshot(id);
+    const ms = [await msg(() => upd(dan, id, { description: "Nope" })), await msg(() => upd(dan, id, { end_date: far }))];
+    check(
+      ms.every((m) => /This repeating item has stopped and can no longer be edited/.test(m)) &&
+        same(await snapshot(id), frozen) && (await sched(id)).description === `Reason ${reason}`,
+      `stop_reason '${reason}' is refused with the 'stopped' message (payload and limit edits), rows unchanged`
+    );
+  }
+
+  // ---- Rewritten rows keep their own exchange rate; only new occurrences use the current one ---------------
+  const P = await mk({ currency: "EUR", last_exchange_rate: 1.5, description: "Priced" });
+  await one(P, HZ);
+  await db.query(`update public.recurring_schedules set last_exchange_rate = 1.7 where id = $1`, [P]);
+  const pBefore = (await snapshot(P)).filter(rewritable);
+  check(
+    pBefore.length >= 3 && pBefore.every((r) => Number(r.row.exchange_rate) === 1.5 && Number(r.row.base_amount) === 45),
+    "fixture: pending rows were created at rate 1.5 (base 45.00) and the schedule's current rate is now 1.7"
+  );
+  await upd(dan, P, { description: "Priced v2" });
+  const pDesc = (await snapshot(P)).filter(rewritable);
+  const baseSum = (r) => r.splits.reduce((t, x) => t + Number(x.b), 0);
+  check(
+    pDesc.length === pBefore.length &&
+      pDesc.every((r) => r.row.description === "Priced v2" && Number(r.row.exchange_rate) === 1.5 &&
+        Number(r.row.base_amount) === 45 && Math.abs(baseSum(r) - 45) < 0.0001),
+    "a description-only edit keeps each pending row at its own rate (1.5) and base amount (45.00): rows are not repriced"
+  );
+  const pSched = await sched(P);
+  check(
+    Number(pSched.last_exchange_rate) === 1.7 &&
+      Math.abs(pSched.splits.reduce((t, x) => t + Number(x.baseAmount), 0) - 51) < 0.0001,
+    "the schedule keeps its current rate (1.7) and its stored payload's baseAmounts are at that rate (the next occurrences' conversion)"
+  );
+  await upd(dan, P, {
+    amount: 10, splits: [{ userId: dan, amount: 3.33 }, { userId: erin, amount: 6.67 }],
+  });
+  const pAmt = (await snapshot(P)).filter(rewritable);
+  check(
+    pAmt.length === pBefore.length &&
+      pAmt.every((r) => Number(r.row.amount) === 10 && Number(r.row.exchange_rate) === 1.5 && Number(r.row.base_amount) === 15 &&
+        Math.abs(baseSum(r) - 15) < 0.0001),
+    "an amount edit recomputes the pending rows' base amounts at each row's own rate (1.5), not the current one"
+  );
+  const pPayload = (await sched(P)).splits.reduce((t, x) => t + Number(x.baseAmount), 0);
+  check(Math.abs(pPayload - 17) < 0.0001 && Number((await sched(P)).last_exchange_rate) === 1.7, "the stored payload converts the new amount at the current rate (10 x 1.7 = 17.00)");
+  const laterHorizon = (await q(`select ($1::timestamptz + interval '2 years')::text as t`, [HZ]))[0].t;
+  await one(P, laterHorizon);
+  const pNew = (await snapshot(P)).filter((r) => r.d > pBefore[pBefore.length - 1].d);
+  check(
+    pNew.length === 2 && pNew.every((r) => Number(r.row.exchange_rate) === 1.7 && Number(r.row.base_amount) === 17 && Number(r.row.amount) === 10),
+    "occurrences created after the edit by the engine use the schedule's current rate (1.7)"
+  );
+
+  const PC = await mkContact({ currency: "EUR", last_exchange_rate: 1.5, description: "Contact priced" });
+  await one(PC, HZ);
+  await db.query(`update public.recurring_schedules set last_exchange_rate = 1.7 where id = $1`, [PC]);
+  const pcBefore = (await snapshot(PC, "contact_expenses")).filter(rewritable);
+  await upd(hal, PC, { description: "Contact priced v2" });
+  const pcDesc = (await snapshot(PC, "contact_expenses")).filter(rewritable);
+  check(
+    pcBefore.length >= 3 && pcDesc.length === pcBefore.length &&
+      pcDesc.every((r) => r.row.description === "Contact priced v2" && Number(r.row.exchange_rate) === 1.5 && Number(r.row.base_amount) === 30),
+    "contact schedule: a description-only edit keeps each pending row at its own rate (1.5), base 30.00"
+  );
+  await upd(hal, PC, { amount: 10, splits: [{ userId: hal, amount: 5 }, { userId: ivy, amount: 5 }] });
+  check(
+    (await snapshot(PC, "contact_expenses")).filter(rewritable).every((r) =>
+      Number(r.row.exchange_rate) === 1.5 && Number(r.row.base_amount) === 15 && Math.abs(baseSum(r) - 15) < 0.0001),
+    "contact schedule: an amount edit recomputes base amounts at each row's own rate (1.5)"
+  );
+
+  // ---- Split users: stored as lowercase uuid text, only the three keys ---------------------------------------
+  const U = await mk({ description: "Upper" });
+  await one(U, HZ);
+  const uRet = await upd(dan, U, {
+    amount: 30,
+    splits: [{ userId: dan.toUpperCase(), amount: 20, baseAmount: 999, note: "junk" }, { userId: erin, amount: 10, extra: 1 }],
+  });
+  check(
+    uRet.splits.length === 2 &&
+      uRet.splits.every((x) => same(Object.keys(x).sort(), ["amount", "baseAmount", "userId"]) && x.userId === x.userId.toLowerCase()) &&
+      same(uRet.splits.map((x) => x.userId).sort(), [dan, erin].sort()) &&
+      same(uRet.splits.map((x) => [Number(x.amount), Number(x.baseAmount)]).sort(), [[10, 10], [20, 20]]) && (await agrees(U)),
+    "an uppercase userId, an extra key and a stale baseAmount are normalised to {userId (lowercase), amount, baseAmount} and the rows agree"
+  );
+
+  // ---- The boundary: a pending row dated exactly now() is not pending ---------------------------------------------
+  const B = await mk({ description: "Boundary" });
+  await one(B, HZ);
+  const bEdge = (await snapshot(B)).filter(rewritable)[0];
+  let bRows;
+  await db.exec("begin");
+  try {
+    await db.query(`update public.expenses set date = now() where id = $1`, [bEdge.id]);
+    await upd(dan, B, { description: "Boundary v2" });
+    bRows = await q(
+      `select id, description, date = now() as at_now, date > now() as future from public.expenses where schedule_id = $1 order by occurrence_date`,
+      [B]
+    );
+    await db.exec("commit");
+  } catch (error) {
+    await db.exec("rollback");
+    throw error;
+  }
+  const bEdgeRow = bRows.find((r) => r.id === bEdge.id);
+  check(
+    bEdgeRow.at_now && !bEdgeRow.future && bEdgeRow.description === "Boundary" &&
+      bRows.filter((r) => r.future).length >= 2 && bRows.filter((r) => r.future).every((r) => r.description === "Boundary v2"),
+    "a pending row whose date is exactly now() (same transaction) is untouched, like the balance predicate date <= now(); later rows are rewritten"
+  );
+
+  // ---- The row lock comes after the membership check (source order; a lock cannot be observed on one connection) ----
+  const { rows: [fnSrc] } = await db.query(
+    `select pg_get_functiondef(p.oid) as def from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.proname = 'update_recurring_schedule'`
+  );
+  const firstLock = fnSrc.def.search(/for update/i);
+  const firstNotFound = fnSrc.def.indexOf("raise exception 'Schedule not found'");
+  const stoppedCheck = fnSrc.def.indexOf("has stopped and can no longer be edited");
+  check(
+    firstNotFound > 0 && firstLock > firstNotFound && stoppedCheck > firstLock,
+    "update_recurring_schedule refuses a non-member (Schedule not found) before taking the schedule lock, and checks the stopped state under it"
   );
 
   // ---- Atomic: a failure while rewriting rolls back the edit, the deletions and earlier rows -----------

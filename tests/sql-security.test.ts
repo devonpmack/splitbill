@@ -567,6 +567,28 @@ describe("SQL security guards", () => {
     expect(stop).toMatch(/v_uid <> v_schedule\.user_lo and v_uid <> v_schedule\.user_hi/i);
     expect(stop).toMatch(/for update/i);
 
+    const update = functionBody(functions, "update_recurring_schedule");
+    const updateSignature = functions.match(
+      /create or replace function public\.update_recurring_schedule\(([\s\S]*?)\)\s*returns/i
+    );
+    expect(updateSignature?.[1]).not.toMatch(/\bp_(uid|user|user_id|actor|caller)/i);
+    expect(update).toMatch(/v_uid uuid := auth\.uid\(\)/i);
+    expect(update).toMatch(/raise exception 'Not authenticated'/i);
+    expect(update).toMatch(/public\.is_group_member\(v_s\.group_id, v_uid\)/i);
+    expect(update).toMatch(/v_uid in \(v_s\.user_lo, v_s\.user_hi\)/i);
+    expect(update).toMatch(/_update_group_expense\(\s*v_uid,/i);
+    expect(update).toMatch(/_update_contact_expense\(\s*v_uid,/i);
+    expect(update).toMatch(/where id = p_schedule_id for update/i);
+    expect(functions).toMatch(
+      /revoke execute on function public\.update_recurring_schedule\([^;]*from public, anon;/i
+    );
+    expect(functions).toMatch(
+      /grant execute on function public\.update_recurring_schedule\([^;]*to authenticated;/i
+    );
+    expect(functions).not.toMatch(
+      /grant execute on function public\.update_recurring_schedule\([^;]*to[^;]*\banon\b/i
+    );
+
     // leave_group keeps both refusals in one definition.
     const leave = functionBody(functions, "leave_group");
     expect(leave).toMatch(/e\.date > now\(\)/i);
