@@ -51,7 +51,7 @@ export default function AddGroupMembers() {
         email,
       });
       if (status === "not_registered") {
-        showError(`No Evenpot account found for ${email}`);
+        showError(`No Splitfox account found for ${email}`);
         return null;
       }
       if (status === "already_member") {

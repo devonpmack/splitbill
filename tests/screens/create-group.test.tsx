@@ -91,7 +91,7 @@ describe("CreateGroup screen", () => {
     expect(mockShowError).toHaveBeenCalledWith("This email is already added");
   });
 
-  it("rejects an email with no Evenpot account", async () => {
+  it("rejects an email with no Splitfox account", async () => {
     mockCheckAsync.mockResolvedValue(false);
     await renderWithPaper(<CreateGroup />);
 
@@ -99,7 +99,7 @@ describe("CreateGroup screen", () => {
 
     await waitFor(() =>
       expect(mockShowError).toHaveBeenCalledWith(
-        "No Evenpot account found for ghost@x.com"
+        "No Splitfox account found for ghost@x.com"
       )
     );
   });
