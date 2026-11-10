@@ -533,7 +533,7 @@ describe("Repeat control on the add expense form", () => {
 
   describe("foreign currency note", () => {
     const NOTE =
-      "Later repeats use the exchange rate on the day each one is created (the last known rate if none is available).";
+      "Later repeats are converted when they are created: at that day's exchange rate if the server has one, otherwise at the rate used for this expense.";
 
     it("explains that later repeats use each day's rate", async () => {
       await renderWithPaper(<AddExpense />);

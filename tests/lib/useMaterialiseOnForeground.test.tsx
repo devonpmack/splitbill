@@ -166,23 +166,17 @@ describe("useMaterialiseOnForeground", () => {
     expect(mockedRpc).toHaveBeenCalledTimes(2);
   });
 
-  it("does not start a second call while one is still running", async () => {
-    let finish: (value: { data: number; error: null }) => void = () => {};
-    mockedRpc.mockReturnValue(
-      new Promise((resolve) => {
-        finish = resolve;
-      })
-    );
+  it("a call that never returns does not block later catch-ups for the session", async () => {
+    mockedRpc.mockReturnValueOnce(new Promise(() => {}));
     const { Wrapper } = makeWrapper();
     await renderHook(() => useMaterialiseOnForeground(), { wrapper: Wrapper });
     await waitFor(() => expect(mockedRpc).toHaveBeenCalledTimes(1));
 
     await awayFor(LONG_AWAY);
-    expect(mockedRpc).toHaveBeenCalledTimes(1);
-
-    await act(async () => finish({ data: 0, error: null }));
-    await awayFor(LONG_AWAY);
     expect(mockedRpc).toHaveBeenCalledTimes(2);
+
+    await awayFor(LONG_AWAY);
+    expect(mockedRpc).toHaveBeenCalledTimes(3);
   });
 
   it("does nothing when nobody is signed in", async () => {

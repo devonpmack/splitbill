@@ -17,7 +17,7 @@ import { useAppTheme } from "@/lib/theme";
 import type { RecurringFrequency } from "@/lib/types";
 
 const RATE_NOTE =
-  "Later repeats use the exchange rate on the day each one is created (the last known rate if none is available).";
+  "Later repeats are converted when they are created: at that day's exchange rate if the server has one, otherwise at the rate used for this expense.";
 
 type RepeatFieldsProps = {
   // Null means the expense does not repeat.

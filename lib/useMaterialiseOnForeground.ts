@@ -11,6 +11,9 @@ const MIN_BACKGROUND_MS = 30_000;
 // Each call row-locks every active schedule the user belongs to, so calls are
 // spaced out however often the app comes back.
 const MIN_INTERVAL_MS = 60_000;
+// A call that has not answered by now is treated as lost, so one hung request
+// cannot block every later catch-up in the session.
+const IN_FLIGHT_TIMEOUT_MS = 30_000;
 
 // Best-effort fallback for the server's own scheduler: asks the server to
 // create any repeats that are due, when the app opens and when it returns
@@ -28,8 +31,10 @@ export function useMaterialiseOnForeground() {
 
     let running = false;
     let lastCallAt = -Infinity;
+    let callId = 0;
     const catchUp = async () => {
-      if (running) return;
+      if (running && Date.now() - lastCallAt < IN_FLIGHT_TIMEOUT_MS) return;
+      const id = ++callId;
       running = true;
       lastCallAt = Date.now();
       try {
@@ -40,7 +45,7 @@ export function useMaterialiseOnForeground() {
       } catch {
         // Offline or the project is unreachable: nothing to tell the user.
       } finally {
-        running = false;
+        if (id === callId) running = false;
       }
     };
 
