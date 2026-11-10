@@ -43,7 +43,7 @@ export default function CreateGroup() {
     try {
       const exists = await checkEmail.mutateAsync(email);
       if (!exists) {
-        showError(`No Evenpot account found for ${email}`);
+        showError(`No Splitfox account found for ${email}`);
         return null;
       }
     } catch {

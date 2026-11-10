@@ -1,10 +1,10 @@
-# Evenpot privacy policy
+# Splitfox privacy policy
 
 <!-- Draft for the publisher to review. Replace the four placeholders in square brackets ([DEVELOPER NAME], [CONTACT EMAIL], [EFFECTIVE DATE], [NUMBER OF DAYS]) and delete this comment before publishing. Every statement below was checked against the app's code at the time of writing; if the app changes (analytics, ads, push notifications, account deletion), this policy has to change with it. -->
 
 Effective date: [EFFECTIVE DATE]
 
-Evenpot is a bill-splitting app. It is published by [DEVELOPER NAME] ("we", "us"). You can reach us at [CONTACT EMAIL].
+Splitfox is a bill-splitting app. It is published by [DEVELOPER NAME] ("we", "us"). You can reach us at [CONTACT EMAIL].
 
 ## What we collect
 
@@ -27,7 +27,7 @@ Evenpot is a bill-splitting app. It is published by [DEVELOPER NAME] ("we", "us"
 
 ## What we do not collect
 
-Evenpot has no advertising, no analytics, no crash-reporting service and no push notifications. It does not ask for your location, your phone's contacts, photos, camera, microphone or files, and it does not read advertising or device identifiers. We do not sell your data.
+Splitfox has no advertising, no analytics, no crash-reporting service and no push notifications. It does not ask for your location, your phone's contacts, photos, camera, microphone or files, and it does not read advertising or device identifiers. We do not sell your data.
 
 ## Who can see your data
 
@@ -35,7 +35,7 @@ Evenpot has no advertising, no analytics, no crash-reporting service and no push
 - **Your contacts, and anyone you have a one-to-one expense or payment with,** can see your name and the expenses and payments between the two of you.
 - **If you leave a group,** the expenses and payments you already added stay in that group, with your name, for the people who are still in it.
 - **Nobody sees your email address through the app.** It is not shown to other users.
-- **Anyone with an Evenpot account can check whether an email address has an account.** If they then send a contact request to it, they will see the name on that account.
+- **Anyone with an Splitfox account can check whether an email address has an account.** If they then send a contact request to it, they will see the name on that account.
 - **A group member can add any registered person to a group without that person accepting first.** The person added can then see that group's data, and can leave once they have no unsettled balance.
 
 ## Service providers
@@ -53,12 +53,12 @@ We keep your data until it is deleted. You can delete individual expenses and pa
 
 - You can change your name in the app (Account, Edit profile).
 - You can delete expenses and payments, and leave a group once you have no unsettled balance.
-- **Evenpot does not yet have a delete-account button in the app.** To delete your account, email [CONTACT EMAIL] from the address you signed up with and ask us to delete it. We will delete your account, and the personal data tied to it (your email address and name), within [NUMBER OF DAYS] days.
+- **Splitfox does not yet have a delete-account button in the app.** To delete your account, email [CONTACT EMAIL] from the address you signed up with and ask us to delete it. We will delete your account, and the personal data tied to it (your email address and name), within [NUMBER OF DAYS] days.
 - **Please know what deletion removes.** Deleting an account also deletes the expenses the account paid for, the payments it made or received, its share of other people's expenses, the one-to-one expenses and payments it has with friends (in either direction), its friends list and group memberships, and the groups it created, and this changes the balances the other members of those groups see. We recommend settling up first, and we can talk you through the options before we delete anything.
 
 ## Children
 
-Evenpot is not directed at children and is not intended for people under 13 (or the higher minimum age in your country). We do not knowingly collect data from children. If you believe a child has an account, contact us and we will remove it.
+Splitfox is not directed at children and is not intended for people under 13 (or the higher minimum age in your country). We do not knowingly collect data from children. If you believe a child has an account, contact us and we will remove it.
 
 ## Changes to this policy
 

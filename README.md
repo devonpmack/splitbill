@@ -1,4 +1,4 @@
-# Evenpot
+# Splitfox
 
 A bill splitting app built with Expo (React Native) and Supabase.
 
