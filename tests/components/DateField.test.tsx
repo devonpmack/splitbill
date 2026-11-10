@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { fireEvent, screen } from "@testing-library/react-native";
-import { freezeNow, renderWithPaper } from "../helpers/testUtils";
+import { freezeNow, renderWithPaper, typeDate } from "../helpers/testUtils";
 import { DateField } from "@/components/DateField";
 
 const NOW = new Date(2026, 10, 9, 15, 0);
@@ -78,5 +78,67 @@ describe("DateField", () => {
     expect(onChange).toHaveBeenLastCalledWith(null);
     expect(screen.getByTestId("date-field")).toHaveProp("value", "11/1");
     expect(screen.queryByText(/Counts toward balances/)).toBeNull();
+  });
+
+  describe("typed days that do not exist", () => {
+    function Harness({ onChange }: { onChange: (d: Date | null) => void }) {
+      const [value, setValue] = useState<Date | null>(NOW);
+      return (
+        <DateField
+          value={value}
+          onChange={(next) => {
+            onChange(next);
+            setValue(next);
+          }}
+        />
+      );
+    }
+
+    it.each(["02/30/2026", "13/45/2026", "01/01/0026"])(
+      "rejects %s instead of rolling it over, keeping the text",
+      async (text) => {
+        const onChange = jest.fn();
+        await renderWithPaper(<Harness onChange={onChange} />);
+
+        await typeDate(screen.getByTestId("date-field"), text);
+
+        expect(onChange).toHaveBeenLastCalledWith(null);
+        expect(onChange).not.toHaveBeenCalledWith(expect.any(Date));
+        expect(screen.getByTestId("date-field")).toHaveProp("value", text);
+      }
+    );
+
+    it.each(["01/01/1999", "01/01/0026"])(
+      "rejects %s as outside 2000-2100 and says so",
+      async (text) => {
+        const onChange = jest.fn();
+        await renderWithPaper(<Harness onChange={onChange} />);
+
+        await typeDate(screen.getByTestId("date-field"), text);
+
+        expect(onChange).toHaveBeenLastCalledWith(null);
+        expect(screen.getByText(/^Must be between/)).toBeTruthy();
+      }
+    );
+
+    it("accepts a real leap day", async () => {
+      const onChange = jest.fn();
+      await renderWithPaper(<Harness onChange={onChange} />);
+
+      await typeDate(screen.getByTestId("date-field"), "02/29/2028");
+
+      expect(onChange).toHaveBeenLastCalledWith(new Date(2028, 1, 29));
+    });
+
+    it("accepts a real day typed after a rejected one", async () => {
+      const onChange = jest.fn();
+      await renderWithPaper(<Harness onChange={onChange} />);
+      const input = screen.getByTestId("date-field");
+
+      await typeDate(input, "02/30/2026");
+      await typeDate(input, "03/05/2026");
+
+      expect(onChange).toHaveBeenLastCalledWith(new Date(2026, 2, 5));
+    });
   });
 });

@@ -55,3 +55,21 @@ export function pickedDateParam(
   if (!picked || isSameLocalDay(picked, baseline)) return undefined;
   return startOfLocalDayISO(picked);
 }
+
+// True when a typed MM/DD/YYYY day is not the day `parsed` landed on, i.e.
+// the Date constructor rolled an impossible day over (02/30 -> 03/02,
+// month 13 -> next year). Text that is not a complete day is not judged.
+export function isRolledOverMDY(text: string, parsed: Date): boolean {
+  const groups = text.match(/\d+/g) ?? [];
+  const parts =
+    groups.length === 1 && groups[0].length === 8
+      ? [groups[0].slice(0, 2), groups[0].slice(2, 4), groups[0].slice(4)]
+      : groups;
+  if (parts.length !== 3 || parts[2].length !== 4) return false;
+  const [month, day, year] = parts.map(Number);
+  return (
+    month !== parsed.getMonth() + 1 ||
+    day !== parsed.getDate() ||
+    year !== parsed.getFullYear()
+  );
+}

@@ -1,5 +1,6 @@
 import {
   formatDay,
+  isRolledOverMDY,
   isUpcoming,
   pickedDateParam,
   startOfLocalDayISO,
@@ -80,5 +81,23 @@ describe("pickedDateParam", () => {
     expect(pickedDateParam(new Date(2026, 10, 1), baseline)).toBe(
       startOfLocalDayISO(new Date(2026, 10, 1))
     );
+  });
+});
+
+describe("isRolledOverMDY", () => {
+  it("flags a typed day the Date constructor rolled over", () => {
+    expect(isRolledOverMDY("02/30/2026", new Date(2026, 1, 30))).toBe(true);
+    expect(isRolledOverMDY("13/45/2026", new Date(2026, 12, 45))).toBe(true);
+    expect(isRolledOverMDY("02302026", new Date(2026, 1, 30))).toBe(true);
+  });
+
+  it("accepts real days, padded or not", () => {
+    expect(isRolledOverMDY("02/29/2028", new Date(2028, 1, 29))).toBe(false);
+    expect(isRolledOverMDY("2/3/2026", new Date(2026, 1, 3))).toBe(false);
+  });
+
+  it("does not judge text that is not a complete day", () => {
+    expect(isRolledOverMDY("02/30/202", new Date(2026, 2, 5))).toBe(false);
+    expect(isRolledOverMDY("", new Date(2026, 2, 5))).toBe(false);
   });
 });

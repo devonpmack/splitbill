@@ -1,5 +1,5 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react-native";
-import { freezeNow, renderWithPaper } from "../helpers/testUtils";
+import { freezeNow, renderWithPaper, typeDate } from "../helpers/testUtils";
 import { startOfLocalDayISO } from "@/lib/dates";
 import AddExpense from "@/app/group-add-expense";
 
@@ -261,6 +261,36 @@ describe("AddExpense screen", () => {
         expect(mockMutateAsync).toHaveBeenCalledWith(
           expect.objectContaining({
             date: startOfLocalDayISO(new Date(2026, 10, 12)),
+          })
+        )
+      );
+    });
+
+    it.each(["02/30/2026", "13/45/2026", "01/01/0026"])(
+      "refuses to submit the impossible date %s",
+      async (text) => {
+        await renderWithPaper(<AddExpense />);
+        await fillBasics();
+
+        await typeDate(screen.getByTestId("date-field"), text);
+        await fireEvent.press(screen.getByText("Add Expense"));
+
+        expect(mockShowError).toHaveBeenCalledWith("Please enter a valid date");
+        expect(mockMutateAsync).not.toHaveBeenCalled();
+      }
+    );
+
+    it("submits a real leap day", async () => {
+      await renderWithPaper(<AddExpense />);
+      await fillBasics();
+
+      await typeDate(screen.getByTestId("date-field"), "02/29/2028");
+      await fireEvent.press(screen.getByText("Add Expense"));
+
+      await waitFor(() =>
+        expect(mockMutateAsync).toHaveBeenCalledWith(
+          expect.objectContaining({
+            date: startOfLocalDayISO(new Date(2028, 1, 29)),
           })
         )
       );

@@ -1,5 +1,5 @@
 import React, { ReactElement, ReactNode } from "react";
-import { act, render } from "@testing-library/react-native";
+import { act, fireEvent, render } from "@testing-library/react-native";
 import { PaperProvider } from "react-native-paper";
 import {
   QueryClient,
@@ -50,6 +50,18 @@ export function freezeNow(now: Date) {
       "performance",
     ],
   });
+}
+
+/**
+ * Types into a DateField the way a device does: the native `change` event
+ * (carrying the raw text) fires before `changeText`.
+ */
+export async function typeDate(
+  input: Parameters<typeof fireEvent.changeText>[0],
+  text: string
+) {
+  await fireEvent(input, "change", { nativeEvent: { text } });
+  await fireEvent.changeText(input, text);
 }
 
 /**
