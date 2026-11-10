@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/auth";
 
 import {
   useContactPayments,
+  useRecentContactPayments,
   useCreateContactPayment,
   useUpdateContactPayment,
   useDeleteContactPayment,
@@ -24,6 +25,25 @@ const mockedUseAuth = useAuth as unknown as jest.Mock;
 beforeEach(() => {
   jest.clearAllMocks();
   mockedUseAuth.mockReturnValue({ user: { id: "user-1", email: "me@x.com" } });
+});
+
+describe("useRecentContactPayments", () => {
+  it("selects each payment's date and orders the feed by it, newest first", async () => {
+    const builder = queryBuilder({ data: [], error: null });
+    mockedSupabase.from.mockReturnValue(builder);
+
+    const { result } = await renderHook(() => useRecentContactPayments(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockedSupabase.from).toHaveBeenCalledWith("contact_payments");
+    expect(builder.select).toHaveBeenCalledWith(
+      expect.stringMatching(/^\s*id,[\s\S]*\bdate,/)
+    );
+    expect(builder.order).toHaveBeenCalledWith("date", { ascending: false });
+    expect(builder.order).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("useContactPayments", () => {

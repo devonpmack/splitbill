@@ -6,12 +6,14 @@ import {
   useCreatePayment,
   useDeletePayment,
   useGroupPayments,
+  useRecentPayments,
   useUpdatePayment,
 } from "@/lib/queries/usePayments";
 
 jest.mock("@/lib/supabase", () => ({
   supabase: { from: jest.fn(), rpc: jest.fn() },
 }));
+jest.mock("@/lib/auth", () => ({ useAuth: () => ({ user: { id: "u1" } }) }));
 
 const mockedSupabase = supabase as unknown as {
   from: jest.Mock;
@@ -20,6 +22,24 @@ const mockedSupabase = supabase as unknown as {
 
 beforeEach(() => {
   jest.clearAllMocks();
+});
+
+describe("useRecentPayments", () => {
+  it("selects each payment's date and orders the feed by it, newest first", async () => {
+    const builder = queryBuilder({ data: [], error: null });
+    mockedSupabase.from.mockReturnValue(builder);
+
+    const { result } = await renderHook(() => useRecentPayments(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(builder.select).toHaveBeenCalledWith(
+      expect.stringMatching(/^\s*id,[\s\S]*\bdate,/)
+    );
+    expect(builder.order).toHaveBeenCalledWith("date", { ascending: false });
+    expect(builder.order).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("useGroupPayments", () => {
