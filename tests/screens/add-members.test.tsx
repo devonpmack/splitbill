@@ -112,7 +112,7 @@ describe("AddGroupMembers screen", () => {
     expect(mockAddAsync).not.toHaveBeenCalled();
   });
 
-  it("blocks an email with no SplitBill account", async () => {
+  it("blocks an email with no Evenpot account", async () => {
     mockLookupAsync.mockResolvedValue("not_registered");
     await renderWithPaper(<AddGroupMembers />);
 
@@ -120,7 +120,7 @@ describe("AddGroupMembers screen", () => {
 
     await waitFor(() =>
       expect(mockShowError).toHaveBeenCalledWith(
-        "No SplitBill account found for ghost@x.com"
+        "No Evenpot account found for ghost@x.com"
       )
     );
     expect(screen.queryByText("ghost@x.com")).toBeNull();

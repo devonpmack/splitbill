@@ -39,7 +39,7 @@ export default function SignIn() {
             variant="displaySmall"
             style={{ color: theme.colors.primary, textAlign: "center" }}
           >
-            SplitBill
+            Evenpot
           </Text>
           <Text
             variant="bodyLarge"

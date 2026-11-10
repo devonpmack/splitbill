@@ -49,7 +49,7 @@ export default function AddContact() {
         variant="bodyMedium"
         style={{ color: theme.colors.onSurfaceVariant, marginBottom: 16 }}
       >
-        Send a contact request to an existing SplitBill user by their email.
+        Send a contact request to an existing Evenpot user by their email.
         They'll need to accept before you can split one-on-one expenses.
       </Text>
 

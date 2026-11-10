@@ -1,29 +1,37 @@
 {
   "expo": {
-    "name": "SplitBill",
+    "name": "Evenpot",
     "slug": "splitbill",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "scheme": "splitbill",
+    "scheme": "evenpot",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1B998B"
+      "backgroundColor": "#2563EB"
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.splitbill.app"
+      "bundleIdentifier": "com.overtureinteractive.evenpot"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#1B998B"
+        "backgroundColor": "#2563EB"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.splitbill.app"
+      "package": "com.overtureinteractive.evenpot",
+      "versionCode": 1,
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",
