@@ -1,6 +1,7 @@
 import { View } from "react-native";
 import { Text } from "react-native-paper";
 import { useAppTheme } from "@/lib/theme";
+import { APP_NAME } from "@/lib/app-name";
 
 // Nothing sends push notifications yet, so the old preference switches only
 // saved a local setting and implied alerts that never come.
@@ -30,7 +31,7 @@ export default function Notifications() {
           color: theme.colors.onSurfaceVariant,
         }}
       >
-        Splitfox doesn&apos;t send push notifications yet.
+        {APP_NAME} doesn&apos;t send push notifications yet.
       </Text>
     </View>
   );

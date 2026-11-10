@@ -12,6 +12,7 @@ import { useSnackbar } from "@/lib/snackbar";
 import { useAppTheme } from "@/lib/theme";
 import { getErrorMessage } from "@/lib/utils";
 import { FormScreen } from "@/components/FormScreen";
+import { APP_NAME } from "@/lib/app-name";
 
 export default function ManageGroup() {
   const theme = useAppTheme();
@@ -132,9 +133,9 @@ export default function ManageGroup() {
           lineHeight: 20,
         }}
       >
-        When simplify debts is on, Splitfox nets out chains of IOUs so the
+        When simplify debts is on, {APP_NAME} nets out chains of IOUs so the
         group settles in the fewest possible payments. For example, if Alice
-        owes Bob $10 and Bob owes Carol $10, Splitfox collapses that into Alice
+        owes Bob $10 and Bob owes Carol $10, {APP_NAME} collapses that into Alice
         paying Carol $10 directly — Bob no longer needs to be involved. Your net
         balance (the total you owe or are owed across the group) is exactly the
         same either way; simplification only changes who pays whom, not how

@@ -4,6 +4,7 @@ import { router } from "expo-router";
 import { Button, HelperText, Text, TextInput } from "react-native-paper";
 import { useAuth } from "@/lib/auth";
 import { useAppTheme } from "@/lib/theme";
+import { APP_NAME } from "@/lib/app-name";
 
 export default function SignIn() {
   const theme = useAppTheme();
@@ -39,7 +40,7 @@ export default function SignIn() {
             variant="displaySmall"
             style={{ color: theme.colors.primary, textAlign: "center" }}
           >
-            Splitfox
+            {APP_NAME}
           </Text>
           <Text
             variant="bodyLarge"

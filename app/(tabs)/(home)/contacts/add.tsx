@@ -9,6 +9,7 @@ import { useAppTheme } from "@/lib/theme";
 import { useAuth } from "@/lib/auth";
 import { getErrorMessage } from "@/lib/utils";
 import { FormScreen } from "@/components/FormScreen";
+import { APP_NAME } from "@/lib/app-name";
 
 export default function AddContact() {
   const theme = useAppTheme();
@@ -49,7 +50,7 @@ export default function AddContact() {
         variant="bodyMedium"
         style={{ color: theme.colors.onSurfaceVariant, marginBottom: 16 }}
       >
-        Send a contact request to an existing Splitfox user by their email.
+        Send a contact request to an existing {APP_NAME} user by their email.
         They'll need to accept before you can split one-on-one expenses.
       </Text>
 

@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react-native";
+import { APP_NAME } from "@/lib/app-name";
 import { renderWithPaper } from "../helpers/testUtils";
 import CreateGroup from "@/app/group-create";
 
@@ -91,7 +92,7 @@ describe("CreateGroup screen", () => {
     expect(mockShowError).toHaveBeenCalledWith("This email is already added");
   });
 
-  it("rejects an email with no Splitfox account", async () => {
+  it("rejects an email with no app account", async () => {
     mockCheckAsync.mockResolvedValue(false);
     await renderWithPaper(<CreateGroup />);
 
@@ -99,7 +100,7 @@ describe("CreateGroup screen", () => {
 
     await waitFor(() =>
       expect(mockShowError).toHaveBeenCalledWith(
-        "No Splitfox account found for ghost@x.com"
+        `No ${APP_NAME} account found for ghost@x.com`
       )
     );
   });

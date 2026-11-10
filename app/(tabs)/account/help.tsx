@@ -2,6 +2,7 @@ import { ScrollView, View } from "react-native";
 import { List } from "react-native-paper";
 import { useAppTheme } from "@/lib/theme";
 import { FaqItem } from "@/components/account/FaqItem";
+import { APP_NAME } from "@/lib/app-name";
 
 const FAQS: { question: string; answer: string }[] = [
   {
@@ -12,15 +13,15 @@ const FAQS: { question: string; answer: string }[] = [
   {
     question: "How do I settle up?",
     answer:
-      "Open a group and tap Settle Up. Splitfox simplifies who owes whom into the fewest payments, then records the payment so balances update for everyone.",
+      `Open a group and tap Settle Up. ${APP_NAME} simplifies who owes whom into the fewest payments, then records the payment so balances update for everyone.`,
   },
   {
     question: "What does \"Simplify group debts\" do?",
     answer:
-      "When simplify debts is on, Splitfox nets out chains of IOUs so the group settles in the fewest possible payments. For example, if Alice owes Bob $10 and Bob owes Carol $10, Splitfox collapses that into Alice paying Carol $10 directly \u2014 Bob no longer needs to be involved. Your net balance (the total you owe or are owed across the group) is exactly the same either way; simplification only changes who pays whom, not how much. Turn it off in a group's settings to see the exact person-to-person amounts from each individual expense.",
+      `When simplify debts is on, ${APP_NAME} nets out chains of IOUs so the group settles in the fewest possible payments. For example, if Alice owes Bob $10 and Bob owes Carol $10, ${APP_NAME} collapses that into Alice paying Carol $10 directly \u2014 Bob no longer needs to be involved. Your net balance (the total you owe or are owed across the group) is exactly the same either way; simplification only changes who pays whom, not how much. Turn it off in a group's settings to see the exact person-to-person amounts from each individual expense.`,
   },
   {
-    question: "Can I add people who aren't on Splitfox?",
+    question: `Can I add people who aren't on ${APP_NAME}?`,
     answer:
       "Members are matched by the email address they signed up with. Invite friends to create an account with that email, then add them to your group.",
   },
