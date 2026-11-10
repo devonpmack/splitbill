@@ -30,7 +30,7 @@ export default function Notifications() {
           color: theme.colors.onSurfaceVariant,
         }}
       >
-        Evenpot doesn&apos;t send push notifications yet.
+        Splitfox doesn&apos;t send push notifications yet.
       </Text>
     </View>
   );

@@ -132,9 +132,9 @@ export default function ManageGroup() {
           lineHeight: 20,
         }}
       >
-        When simplify debts is on, Evenpot nets out chains of IOUs so the
+        When simplify debts is on, Splitfox nets out chains of IOUs so the
         group settles in the fewest possible payments. For example, if Alice
-        owes Bob $10 and Bob owes Carol $10, Evenpot collapses that into Alice
+        owes Bob $10 and Bob owes Carol $10, Splitfox collapses that into Alice
         paying Carol $10 directly — Bob no longer needs to be involved. Your net
         balance (the total you owe or are owed across the group) is exactly the
         same either way; simplification only changes who pays whom, not how
