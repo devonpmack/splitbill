@@ -274,6 +274,11 @@ async function catalog(database) {
     functions: await rows(`select p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ') secdef=' || p.prosecdef as k,
         regexp_replace(pg_get_functiondef(p.oid), '\\s+', ' ', 'g') as v
         from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public'`),
+    // Who may execute each function. Sorted, because the order of the aclitems
+    // depends on the order the grants were made in, which differs by build.
+    functionAcl: await rows(`select p.oid::regprocedure::text as k,
+        coalesce((select string_agg(a::text, ',' order by a::text) from unnest(p.proacl) a), 'default') as v
+        from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public'`),
     policies: await rows(`select tablename || '.' || policyname || ' ' || cmd as k,
         coalesce(qual, '') || ' | ' || coalesce(with_check, '') as v from pg_policies where schemaname = 'public'`),
     constraints: await rows(`select conrelid::regclass || '.' || conname as k, pg_get_constraintdef(oid) as v
