@@ -91,23 +91,26 @@ describe("useRecurringSchedules", () => {
 });
 
 describe("useScheduleFrequencies", () => {
-  it("maps each visible schedule id to its frequency", async () => {
-    mockedSupabase.from.mockReturnValue(
-      queryBuilder({
-        data: [
-          { id: "s1", frequency: "monthly" },
-          { id: "s2", frequency: "biweekly" },
-        ],
-        error: null,
-      })
-    );
+  it("maps each visible schedule id to its frequency and whether it has stopped", async () => {
+    const builder = queryBuilder({
+      data: [
+        { id: "s1", frequency: "monthly", stopped_at: null },
+        { id: "s2", frequency: "biweekly", stopped_at: "2026-03-01T00:00:00Z" },
+      ],
+      error: null,
+    });
+    mockedSupabase.from.mockReturnValue(builder);
 
     const { result } = await renderHook(() => useScheduleFrequencies(), {
       wrapper: createWrapper(),
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual({ s1: "monthly", s2: "biweekly" });
+    expect(builder.select).toHaveBeenCalledWith("id, frequency, stopped_at");
+    expect(result.current.data).toEqual({
+      s1: { frequency: "monthly", stopped: false },
+      s2: { frequency: "biweekly", stopped: true },
+    });
   });
 
   it("is refetched by the ['recurring-schedules'] invalidation", async () => {

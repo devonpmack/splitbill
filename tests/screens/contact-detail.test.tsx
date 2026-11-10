@@ -56,7 +56,12 @@ jest.mock("@/lib/queries/useContactPayments", () => ({
 }));
 jest.mock("@/lib/snackbar", () => ({ useSnackbar: jest.fn() }));
 jest.mock("@/lib/queries/useRecurringSchedules", () => ({
-  useScheduleFrequencies: () => ({ data: { s1: "monthly" } }),
+  useScheduleFrequencies: () => ({
+    data: {
+      s1: { frequency: "monthly", stopped: false },
+      s9: { frequency: "daily", stopped: true },
+    },
+  }),
 }));
 jest.mock("@/lib/confirm", () => ({ useConfirm: jest.fn() }));
 
@@ -353,6 +358,26 @@ describe("ContactDetail screen", () => {
     expect(confirmArg.title).toBe("Delete Expense");
     expect(confirmArg.message).toContain(
       "This only removes this one occurrence; the series continues. To stop the series, use Repeating."
+    );
+  });
+
+  it("uses the plain delete confirm for a kept row of a stopped schedule", async () => {
+    setup({
+      expenses: [
+        {
+          ...expensesFixture[0],
+          schedule_id: "s9",
+          occurrence_date: "2024-01-01",
+          hand_edited: true,
+        },
+      ],
+    });
+    await renderWithPaper(<ContactDetail />);
+
+    await fireEvent(screen.getByText("Dinner"), "longPress");
+
+    expect(mockConfirm.mock.calls[0][0].message).not.toMatch(
+      /occurrence|series/
     );
   });
 

@@ -20,6 +20,7 @@ import {
 } from "@/lib/utils";
 import { useRealtimeSubscription } from "@/lib/realtime";
 import { withSkipNote } from "@/lib/recurrence";
+import { useScheduleFrequencies } from "@/lib/queries/useRecurringSchedules";
 import { useSnackbar } from "@/lib/snackbar";
 import { useConfirm } from "@/lib/confirm";
 import { useAppTheme } from "@/lib/theme";
@@ -53,6 +54,7 @@ export function GroupDetailScreen({
   const { data: simplifiedDebts, refetch: refetchSimplifiedDebts } =
     useGroupSimplifiedEdges(groupId, simplify);
   const deleteExpense = useDeleteExpense();
+  const { data: schedules } = useScheduleFrequencies();
   const deletePayment = useDeletePayment();
   const leaveGroup = useLeaveGroup();
   const { showError, showInfo } = useSnackbar();
@@ -118,8 +120,9 @@ export function GroupDetailScreen({
   ]);
 
   const handleDeleteExpense = (expenseId: string) => {
-    const isOccurrence = !!expenses?.find((e) => e.id === expenseId)
-      ?.schedule_id;
+    const scheduleId = expenses?.find((e) => e.id === expenseId)?.schedule_id;
+    const isOccurrence =
+      !!scheduleId && schedules?.[scheduleId]?.stopped === false;
     confirm({
       title: "Delete Expense",
       message: withSkipNote(

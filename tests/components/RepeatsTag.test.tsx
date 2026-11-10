@@ -43,8 +43,14 @@ function expense(over: Partial<ExpenseWithSplits> = {}): ExpenseWithSplits {
   };
 }
 
-function frequencies(map: Record<string, string>) {
-  (useScheduleFrequencies as jest.Mock).mockReturnValue({ data: map });
+function frequencies(map: Record<string, string>, stopped: string[] = []) {
+  const data = Object.fromEntries(
+    Object.entries(map).map(([id, frequency]) => [
+      id,
+      { frequency, stopped: stopped.includes(id) },
+    ])
+  );
+  (useScheduleFrequencies as jest.Mock).mockReturnValue({ data });
 }
 
 beforeEach(() => {
@@ -87,6 +93,17 @@ describe("ExpenseCard repeat chip", () => {
 
   it("shows no chip on an ordinary expense", async () => {
     await renderWithPaper(card(expense()));
+
+    expect(screen.queryByText(/^Repeats/)).toBeNull();
+  });
+
+  it("shows no chip on a kept row of a stopped schedule", async () => {
+    frequencies({ s1: "daily" }, ["s1"]);
+    await renderWithPaper(
+      card(
+        expense({ schedule_id: "s1", occurrence_date: "2026-12-01", hand_edited: true })
+      )
+    );
 
     expect(screen.queryByText(/^Repeats/)).toBeNull();
   });

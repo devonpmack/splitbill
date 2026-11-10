@@ -51,8 +51,14 @@ export function useRecurringSchedules(scope: ScheduleScope) {
   });
 }
 
-// Every schedule the caller can see, id to frequency: what the "Repeats
-// monthly" chip on a row needs, whichever list the row appears in.
+export interface ScheduleSummary {
+  frequency: RecurringFrequency;
+  stopped: boolean;
+}
+
+// Every schedule the caller can see, by id (frequency and whether it has
+// stopped): what the "Repeats monthly" chip and
+// the skip note on a row need, whichever list the row appears in.
 export function useScheduleFrequencies() {
   const { user } = useAuth();
 
@@ -61,14 +67,20 @@ export function useScheduleFrequencies() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("recurring_schedules")
-        .select("id, frequency");
+        .select("id, frequency, stopped_at");
 
       if (error) throw error;
       const rows = data as unknown as {
         id: string;
         frequency: RecurringFrequency;
+        stopped_at: string | null;
       }[];
-      return Object.fromEntries(rows.map((row) => [row.id, row.frequency]));
+      return Object.fromEntries(
+        rows.map((row): [string, ScheduleSummary] => [
+          row.id,
+          { frequency: row.frequency, stopped: row.stopped_at !== null },
+        ])
+      );
     },
     enabled: !!user,
   });

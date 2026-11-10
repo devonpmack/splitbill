@@ -28,6 +28,7 @@ import { useSnackbar } from "@/lib/snackbar";
 import { useConfirm } from "@/lib/confirm";
 import { useAppTheme } from "@/lib/theme";
 import { withSkipNote } from "@/lib/recurrence";
+import { useScheduleFrequencies } from "@/lib/queries/useRecurringSchedules";
 import { useNow } from "@/lib/useNow";
 import { ActivityList, splitActivityListItems } from "@/components/ActivityList";
 import { DualActionBar } from "@/components/DualActionBar";
@@ -84,6 +85,7 @@ export function ContactDetailScreen({
   const { data: pairCurrency = "USD" } = useContactCurrency(contactUserId);
   const setContactCurrency = useSetContactCurrency();
   const deleteContactExpense = useDeleteContactExpense();
+  const { data: schedules } = useScheduleFrequencies();
   const deleteContactPayment = useDeleteContactPayment();
   const { showError } = useSnackbar();
 
@@ -129,8 +131,9 @@ export function ContactDetailScreen({
   const hasActivity = activityItems.length > 0 || upcomingItems.length > 0;
 
   const handleDeleteExpense = (expenseId: string) => {
-    const isOccurrence = !!expenses?.find((e) => e.id === expenseId)
-      ?.schedule_id;
+    const scheduleId = expenses?.find((e) => e.id === expenseId)?.schedule_id;
+    const isOccurrence =
+      !!scheduleId && schedules?.[scheduleId]?.stopped === false;
     confirm({
       title: "Delete Expense",
       message: withSkipNote(
