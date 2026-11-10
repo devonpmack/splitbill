@@ -14,6 +14,7 @@ import {
   useThemePreference,
 } from "@/lib/theme-preference";
 import { StatusBar } from "expo-status-bar";
+import { useRefetchOnForeground } from "@/lib/useRefetchOnForeground";
 
 type MaterialIconName = ComponentProps<typeof MaterialCommunityIcons>["name"];
 
@@ -25,6 +26,11 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+function RefetchOnForeground() {
+  useRefetchOnForeground();
+  return null;
+}
 
 function ThemedApp() {
   const { theme, isDark } = useThemePreference();
@@ -79,6 +85,7 @@ function ThemedApp() {
       }}
     >
       <QueryClientProvider client={queryClient}>
+        <RefetchOnForeground />
         <AuthProvider>
           <DisplayCurrencyProvider>
             <SnackbarProvider>
