@@ -12,7 +12,8 @@ const NON_FINITE_IN_JSON = [...NON_FINITE, "nan", "inf", "-inf", "+Infinity"];
 
 const AMOUNT_MESSAGE = "Expense amount must be greater than zero";
 const RATE_MESSAGE = "Exchange rate must be greater than zero";
-const SPLIT_MESSAGE = "Split amount cannot be negative";
+const SPLIT_MESSAGE = "Split amount must be a valid number";
+const NEGATIVE_SPLIT_MESSAGE = "Split amount cannot be negative";
 const PAYMENT_MESSAGE = "Payment amount must be greater than zero";
 
 export default async function nonFiniteAmounts({ db, asUser, signUp, check }) {
@@ -166,7 +167,7 @@ export default async function nonFiniteAmounts({ db, asUser, signUp, check }) {
     // Messages and order for ordinary bad input are untouched.
     await refusedCleanly(`${name} amount 0`, AMOUNT_MESSAGE, () => call("0", halves(5, 5), "1"));
     await refusedCleanly(`${name} rate 0`, RATE_MESSAGE, () => call("10", halves(5, 5), "0"));
-    await refusedCleanly(`${name} negative split`, SPLIT_MESSAGE, () =>
+    await refusedCleanly(`${name} negative split`, NEGATIVE_SPLIT_MESSAGE, () =>
       call("10", halves(-1, 11), "1")
     );
     await refusedCleanly(`${name} NaN amount and NaN rate report the amount first`, AMOUNT_MESSAGE, () =>

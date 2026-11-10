@@ -760,7 +760,7 @@ begin
     v_split_user := (v_split->>'userId')::uuid;
     if (v_split->>'amount')::numeric in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
       or (v_split->>'baseAmount')::numeric in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) then
-      raise exception 'Split amount cannot be negative';
+      raise exception 'Split amount must be a valid number';
     end if;
     v_split_amount := round((v_split->>'amount')::numeric, 2);
     v_split_base := round(
@@ -955,7 +955,7 @@ begin
     v_split_user := (v_split->>'userId')::uuid;
     if (v_split->>'amount')::numeric in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
       or (v_split->>'baseAmount')::numeric in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) then
-      raise exception 'Split amount cannot be negative';
+      raise exception 'Split amount must be a valid number';
     end if;
     v_split_amount := round((v_split->>'amount')::numeric, 2);
     v_split_base := round(
@@ -1362,7 +1362,7 @@ begin
     v_split_user := (v_split->>'userId')::uuid;
     if (v_split->>'amount')::numeric in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
       or (v_split->>'baseAmount')::numeric in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) then
-      raise exception 'Split amount cannot be negative';
+      raise exception 'Split amount must be a valid number';
     end if;
     v_split_amount := round((v_split->>'amount')::numeric, 2);
     v_split_base := round(
@@ -1561,7 +1561,7 @@ begin
     v_split_user := (v_split->>'userId')::uuid;
     if (v_split->>'amount')::numeric in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
       or (v_split->>'baseAmount')::numeric in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) then
-      raise exception 'Split amount cannot be negative';
+      raise exception 'Split amount must be a valid number';
     end if;
     v_split_amount := round((v_split->>'amount')::numeric, 2);
     v_split_base := round(

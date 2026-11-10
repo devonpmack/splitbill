@@ -4,7 +4,8 @@
 -- Infinity through: create_expense_with_splits stored them and
 -- get_group_balances then returned NaN. Each guard sits beside the existing
 -- check for that field and raises that check's message; a split's amount and
--- baseAmount (JSON strings such as 'NaN') use the split-negative message.
+-- baseAmount (JSON strings such as 'NaN') say 'Split amount must be a valid number',
+-- the message the recurring RPCs use.
 -- Bodies are otherwise unchanged. create or replace keeps the grants, so the
 -- revokes on the private helpers are repeated only to mirror schemas/04.
 
@@ -74,7 +75,7 @@ begin
     v_split_user := (v_split->>'userId')::uuid;
     if (v_split->>'amount')::numeric in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
       or (v_split->>'baseAmount')::numeric in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) then
-      raise exception 'Split amount cannot be negative';
+      raise exception 'Split amount must be a valid number';
     end if;
     v_split_amount := round((v_split->>'amount')::numeric, 2);
     v_split_base := round(
@@ -229,7 +230,7 @@ begin
     v_split_user := (v_split->>'userId')::uuid;
     if (v_split->>'amount')::numeric in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
       or (v_split->>'baseAmount')::numeric in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) then
-      raise exception 'Split amount cannot be negative';
+      raise exception 'Split amount must be a valid number';
     end if;
     v_split_amount := round((v_split->>'amount')::numeric, 2);
     v_split_base := round(
@@ -384,7 +385,7 @@ begin
     v_split_user := (v_split->>'userId')::uuid;
     if (v_split->>'amount')::numeric in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
       or (v_split->>'baseAmount')::numeric in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) then
-      raise exception 'Split amount cannot be negative';
+      raise exception 'Split amount must be a valid number';
     end if;
     v_split_amount := round((v_split->>'amount')::numeric, 2);
     v_split_base := round(
@@ -543,7 +544,7 @@ begin
     v_split_user := (v_split->>'userId')::uuid;
     if (v_split->>'amount')::numeric in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
       or (v_split->>'baseAmount')::numeric in ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric) then
-      raise exception 'Split amount cannot be negative';
+      raise exception 'Split amount must be a valid number';
     end if;
     v_split_amount := round((v_split->>'amount')::numeric, 2);
     v_split_base := round(
