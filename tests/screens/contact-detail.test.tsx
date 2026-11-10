@@ -10,7 +10,10 @@ const mockShowError = jest.fn();
 const mockConfirm = jest.fn();
 // Captures whatever Stack.Screen was handed, so a test can assert the
 // header options the screen set.
-type ScreenOptions = { title?: string };
+type ScreenOptions = {
+  title?: string;
+  headerRight?: () => { props: { onPress: () => void } };
+};
 const mockScreenHolder: { options: ScreenOptions | null } = {
   options: null,
 };
@@ -361,6 +364,35 @@ describe("ContactDetail screen", () => {
     expect(mockConfirm.mock.calls[0][0].message).not.toMatch(
       /occurrence|series/
     );
+  });
+
+  it("opens the contact's Repeating list from the header", async () => {
+    await renderWithPaper(<ContactDetail />);
+
+    await actAsync(async () => {
+      screenOptions().headerRight?.().props.onPress();
+    });
+
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/repeating",
+      params: { contactUserId: "user-2" },
+    });
+  });
+
+  it("offers no Repeating list for a group-mate who is not a contact", async () => {
+    (useContacts as jest.Mock).mockReturnValue({
+      data: [
+        {
+          contact_user_id: "user-2",
+          full_name: "Bob",
+          balance: 15,
+          is_accepted: false,
+        },
+      ],
+    });
+    await renderWithPaper(<ContactDetail />);
+
+    expect(screenOptions().headerRight).toBeUndefined();
   });
 
   it("hides 1-on-1 actions and currency editing for a non-contact group-mate", async () => {

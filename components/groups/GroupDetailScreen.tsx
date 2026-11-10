@@ -208,6 +208,12 @@ export function GroupDetailScreen({
                   params: { groupId },
                 })
               }
+              onRepeating={() =>
+                router.push({
+                  pathname: "/repeating",
+                  params: { groupId },
+                })
+              }
               onLeave={handleLeaveGroup}
             />
           ),

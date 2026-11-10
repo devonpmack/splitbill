@@ -127,6 +127,10 @@ function ThemedApp() {
                     options={{ ...modalScreenOptions, title: "Settle Up" }}
                   />
                   <Stack.Screen
+                    name="repeating"
+                    options={{ ...modalScreenOptions, title: "Repeating" }}
+                  />
+                  <Stack.Screen
                     name="group-edit-payment"
                     options={{ ...modalScreenOptions, title: "Edit Payment" }}
                   />

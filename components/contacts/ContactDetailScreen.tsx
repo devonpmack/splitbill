@@ -34,6 +34,7 @@ import { DualActionBar } from "@/components/DualActionBar";
 import { EmptyState } from "@/components/EmptyState";
 import { ContactGroupBreakdownList } from "@/components/contacts/ContactGroupBreakdownList";
 import { ContactSummaryCard } from "@/components/contacts/ContactSummaryCard";
+import { RepeatingHeaderButton } from "@/components/recurring/RepeatingHeaderButton";
 
 export type ContactDetailScreenProps = {
   contactUserId: string;
@@ -185,7 +186,23 @@ export function ContactDetailScreen({
 
   return (
     <>
-      <Stack.Screen options={{ title: contactName }} />
+      <Stack.Screen
+        options={{
+          title: contactName,
+          headerRight: isAccepted
+            ? () => (
+                <RepeatingHeaderButton
+                  onPress={() =>
+                    router.push({
+                      pathname: "/repeating",
+                      params: { contactUserId },
+                    })
+                  }
+                />
+              )
+            : undefined,
+        }}
+      />
       <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
         <ScrollView
           style={{ flex: 1 }}

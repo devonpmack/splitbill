@@ -9,7 +9,11 @@ const mockCanGoBack = jest.fn();
 // Captures whatever Stack.Screen was handed, so a test can assert the
 // header options the screen set.
 type HeaderElement = {
-  props: { onLeave: () => void; onSettings: () => void };
+  props: {
+    onLeave: () => void;
+    onSettings: () => void;
+    onRepeating: () => void;
+  };
 };
 type ScreenOptions = { title?: string; headerRight: () => HeaderElement };
 const mockScreenHolder: { options: ScreenOptions | null } = {
@@ -187,6 +191,10 @@ beforeEach(() => {
 
 function pressLeave() {
   screenOptions().headerRight().props.onLeave();
+}
+
+function pressRepeating() {
+  screenOptions().headerRight().props.onRepeating();
 }
 
 function pressSettings() {
@@ -411,6 +419,19 @@ describe("GroupDetail screen", () => {
 
     expect(mockPush).toHaveBeenCalledWith({
       pathname: "/group-manage",
+      params: { groupId: "g1" },
+    });
+  });
+
+  it("opens the group's Repeating list from the header", async () => {
+    await renderWithPaper(<GroupDetail />);
+
+    await actAsync(async () => {
+      pressRepeating();
+    });
+
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/repeating",
       params: { groupId: "g1" },
     });
   });
