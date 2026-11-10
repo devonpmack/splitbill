@@ -15,6 +15,7 @@ import {
 } from "@/lib/theme-preference";
 import { StatusBar } from "expo-status-bar";
 import { useRefetchOnForeground } from "@/lib/useRefetchOnForeground";
+import { useMaterialiseOnForeground } from "@/lib/useMaterialiseOnForeground";
 
 type MaterialIconName = ComponentProps<typeof MaterialCommunityIcons>["name"];
 
@@ -29,6 +30,11 @@ const queryClient = new QueryClient({
 
 function RefetchOnForeground() {
   useRefetchOnForeground();
+  return null;
+}
+
+function MaterialiseOnForeground() {
+  useMaterialiseOnForeground();
   return null;
 }
 
@@ -87,6 +93,7 @@ function ThemedApp() {
       <QueryClientProvider client={queryClient}>
         <RefetchOnForeground />
         <AuthProvider>
+          <MaterialiseOnForeground />
           <DisplayCurrencyProvider>
             <SnackbarProvider>
               <ConfirmProvider>

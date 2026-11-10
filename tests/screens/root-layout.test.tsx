@@ -34,13 +34,23 @@ jest.mock("@/lib/confirm", () => ({
 jest.mock("@/lib/useRefetchOnForeground", () => ({
   useRefetchOnForeground: jest.fn(),
 }));
+jest.mock("@/lib/useMaterialiseOnForeground", () => ({
+  useMaterialiseOnForeground: jest.fn(),
+}));
 
 import { useRefetchOnForeground } from "@/lib/useRefetchOnForeground";
+import { useMaterialiseOnForeground } from "@/lib/useMaterialiseOnForeground";
 
 describe("RootLayout", () => {
   it("refetches on app foreground for the whole app", async () => {
     await render(<RootLayout />);
 
     expect(useRefetchOnForeground).toHaveBeenCalled();
+  });
+
+  it("catches up on due recurring expenses for the whole app", async () => {
+    await render(<RootLayout />);
+
+    expect(useMaterialiseOnForeground).toHaveBeenCalled();
   });
 });
