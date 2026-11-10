@@ -1,8 +1,10 @@
 import {
+  buildRepeat,
   endSummary,
   frequencyLabel,
   nextOccurrence,
   occurrenceDate,
+  parseRepeatCount,
   repeatsPhrase,
   stopReasonLabel,
 } from "@/lib/recurrence";
@@ -150,5 +152,76 @@ describe("endSummary", () => {
     expect(endSummary(schedule({ max_count: 2, next_index: 4 }))).toBe(
       "0 left"
     );
+  });
+});
+
+describe("parseRepeatCount", () => {
+  it("accepts whole numbers of at least one", () => {
+    expect(parseRepeatCount("1")).toBe(1);
+    expect(parseRepeatCount(" 12 ")).toBe(12);
+  });
+
+  it.each(["0", "", "  ", "abc", "2.5", "-1", "1e3", "3x"])(
+    "rejects %p",
+    (text) => {
+      expect(parseRepeatCount(text)).toBeNull();
+    }
+  );
+});
+
+describe("buildRepeat", () => {
+  const base = {
+    frequency: "monthly" as const,
+    startDay: new Date(2026, 10, 9, 15, 30),
+    ends: "never" as const,
+    endDay: null,
+    count: "12",
+    timeZone: "America/Toronto",
+  };
+
+  it("sends the start as a calendar day, never an instant", () => {
+    expect(buildRepeat(base)).toEqual({
+      ok: true,
+      repeat: {
+        frequency: "monthly",
+        startDate: "2026-11-09",
+        timeZone: "America/Toronto",
+      },
+    });
+  });
+
+  it("ignores the end fields while it never ends", () => {
+    const result = buildRepeat({ ...base, endDay: new Date(2027, 0, 1) });
+    expect(result).toEqual({
+      ok: true,
+      repeat: expect.not.objectContaining({ endDate: expect.anything() }),
+    });
+  });
+
+  it("sends the end date as a calendar day", () => {
+    expect(
+      buildRepeat({ ...base, ends: "date", endDay: new Date(2027, 0, 15, 22) })
+    ).toEqual({
+      ok: true,
+      repeat: expect.objectContaining({ endDate: "2027-01-15" }),
+    });
+  });
+
+  it("refuses an end date that is not a day", () => {
+    expect(buildRepeat({ ...base, ends: "date", endDay: null })).toEqual({
+      ok: false,
+      error: "Please enter a valid end date",
+    });
+  });
+
+  it("sends the count, or refuses one that is not a whole number above zero", () => {
+    expect(buildRepeat({ ...base, ends: "count", count: "6" })).toEqual({
+      ok: true,
+      repeat: expect.objectContaining({ maxCount: 6 }),
+    });
+    expect(buildRepeat({ ...base, ends: "count", count: "0" })).toEqual({
+      ok: false,
+      error: "Number of repeats must be greater than zero",
+    });
   });
 });

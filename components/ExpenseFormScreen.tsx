@@ -10,15 +10,33 @@ import {
   roundToCurrency,
 } from "@/lib/utils";
 import { resolveEntryRate } from "@/lib/currency";
+import {
+  buildRepeat,
+  occurrenceDate,
+  parseRepeatCount,
+  type RepeatEnds,
+  type RepeatSubmission,
+} from "@/lib/recurrence";
+import {
+  deviceTimeZone,
+  formatCalendarDay,
+  parseCalendarDate,
+  toLocalDateString,
+} from "@/lib/dates";
 import { useExchangeRates } from "@/lib/exchange-rates";
 import { useSnackbar } from "@/lib/snackbar";
 import { DateField } from "@/components/DateField";
 import { FormScreen } from "@/components/FormScreen";
+import { RepeatFields } from "@/components/RepeatFields";
 import { ExpenseAmountCurrencyInput } from "@/components/groups/ExpenseAmountCurrencyInput";
 import { PaidByPicker } from "@/components/groups/PaidByPicker";
 import { SplitMembersSection } from "@/components/groups/SplitMembersSection";
 import { SplitTypeSelector } from "@/components/groups/SplitTypeSelector";
-import type { MemberWithProfile, SplitType } from "@/lib/types";
+import type {
+  MemberWithProfile,
+  RecurringFrequency,
+  SplitType,
+} from "@/lib/types";
 
 // The expense being edited, as far as this form needs it.
 export type EditableExpense = {
@@ -41,6 +59,9 @@ export type ExpenseFormSubmission = {
   currency: string;
   exchangeRate: number;
   date?: string;
+  // Present when a new expense repeats; `date` is then absent, the start day
+  // is in here.
+  repeat?: RepeatSubmission;
 };
 
 type ExpenseFormScreenProps = {
@@ -80,7 +101,23 @@ export function ExpenseFormScreen({
   const [excludedMemberIds, setExcludedMemberIds] = useState<string[]>([]);
   const [currency, setCurrency] = useState<string | null>(null);
 
+  const [frequency, setFrequency] = useState<RecurringFrequency | null>(null);
+  const [ends, setEnds] = useState<RepeatEnds>("never");
+  const [pickedEndDay, setPickedEndDay] = useState<Date | null | undefined>(
+    undefined
+  );
+  const [repeatCount, setRepeatCount] = useState("12");
+
   const day = useDayPick(isEdit ? existingExpense?.date : undefined);
+  const repeating = !isEdit && frequency !== null;
+  const startDay = day.value ?? new Date();
+  const startDate = toLocalDateString(startDay);
+  // Until the user picks an end day, the end is one step after the start.
+  const endDay =
+    pickedEndDay === undefined
+      ? parseCalendarDate(occurrenceDate(startDate, frequency ?? "daily", 1))
+      : pickedEndDay;
+  const repeatCountValue = parseRepeatCount(repeatCount);
   const entryCurrency = currency ?? baseCurrency;
 
   useHydrateOnce(isEdit && !!existingExpense && members.length > 0, () => {
@@ -176,6 +213,22 @@ export function ExpenseFormScreen({
       return;
     }
 
+    const repeat =
+      repeating && frequency
+        ? buildRepeat({
+            frequency,
+            startDay,
+            ends,
+            endDay,
+            count: repeatCount,
+            timeZone: deviceTimeZone(),
+          })
+        : undefined;
+    if (repeat && !repeat.ok) {
+      showError(repeat.error);
+      return;
+    }
+
     try {
       await onSubmit({
         paidBy: effectivePaidBy,
@@ -185,7 +238,9 @@ export function ExpenseFormScreen({
         splits: result.splits,
         currency: entryCurrency,
         exchangeRate,
-        date: day.dateParam,
+        ...(repeat?.ok
+          ? { repeat: repeat.repeat }
+          : { date: day.dateParam }),
       });
       router.back();
     } catch (error) {
@@ -230,7 +285,29 @@ export function ExpenseFormScreen({
         baseCurrencyLabel={baseCurrencyLabel}
       />
 
-      <DateField value={day.value} onChange={day.onChange} />
+      <DateField
+        value={day.value}
+        onChange={day.onChange}
+        label={repeating ? "Starts" : "Date"}
+      />
+
+      {isEdit ? null : (
+        <RepeatFields
+          frequency={frequency}
+          onFrequencyChange={setFrequency}
+          ends={ends}
+          onEndsChange={setEnds}
+          endDay={endDay}
+          onEndDayChange={setPickedEndDay}
+          count={repeatCount}
+          onCountChange={setRepeatCount}
+          lastOccurrenceLabel={
+            frequency && repeatCountValue
+              ? `The last one is on ${formatCalendarDay(occurrenceDate(startDate, frequency, repeatCountValue - 1))}.`
+              : undefined
+          }
+        />
+      )}
 
       <PaidByPicker
         members={members}

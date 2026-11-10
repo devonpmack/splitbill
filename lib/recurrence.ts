@@ -1,4 +1,4 @@
-import { formatCalendarDay } from "./dates";
+import { formatCalendarDay, toLocalDateString } from "./dates";
 import type {
   RecurringFrequency,
   RecurringSchedule,
@@ -116,4 +116,54 @@ export function endSummary(schedule: RecurringSchedule): string {
     parts.push(`${Math.max(schedule.max_count - schedule.next_index, 0)} left`);
   }
   return parts.length > 0 ? parts.join(" · ") : "Never ends";
+}
+
+// The "After N times" field: a whole number of at least 1, else null.
+export function parseRepeatCount(text: string): number | null {
+  const trimmed = text.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const count = Number(trimmed);
+  return count >= 1 ? count : null;
+}
+
+export type RepeatEnds = "never" | "date" | "count";
+
+// How a new expense repeats, as the form hands it on.
+export interface RepeatSubmission {
+  frequency: RecurringFrequency;
+  // The first occurrence's local calendar day, "YYYY-MM-DD".
+  startDate: string;
+  timeZone: string;
+  endDate?: string;
+  maxCount?: number;
+}
+
+export function buildRepeat(input: {
+  frequency: RecurringFrequency;
+  startDay: Date;
+  ends: RepeatEnds;
+  // Null when the typed end day is incomplete or invalid.
+  endDay: Date | null;
+  count: string;
+  timeZone: string;
+}): { ok: true; repeat: RepeatSubmission } | { ok: false; error: string } {
+  const { frequency, startDay, ends, endDay, count, timeZone } = input;
+  const base = {
+    frequency,
+    startDate: toLocalDateString(startDay),
+    timeZone,
+  };
+
+  if (ends === "date") {
+    return endDay
+      ? { ok: true, repeat: { ...base, endDate: toLocalDateString(endDay) } }
+      : { ok: false, error: "Please enter a valid end date" };
+  }
+  if (ends === "count") {
+    const maxCount = parseRepeatCount(count);
+    return maxCount === null
+      ? { ok: false, error: "Number of repeats must be greater than zero" }
+      : { ok: true, repeat: { ...base, maxCount } };
+  }
+  return { ok: true, repeat: base };
 }

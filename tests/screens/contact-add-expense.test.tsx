@@ -22,6 +22,9 @@ jest.mock("@/lib/queries/useContactExpenses", () => ({
   useCreateContactExpense: jest.fn(),
   useUpdateContactExpense: jest.fn(),
 }));
+jest.mock("@/lib/queries/useRecurringSchedules", () => ({
+  useCreateRecurringSchedule: () => ({ mutateAsync: jest.fn(), isPending: false }),
+}));
 jest.mock("@/lib/snackbar", () => ({ useSnackbar: jest.fn() }));
 
 import { router } from "expo-router";

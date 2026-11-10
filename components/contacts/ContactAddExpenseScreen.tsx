@@ -5,6 +5,7 @@ import {
   useCreateContactExpense,
   useUpdateContactExpense,
 } from "@/lib/queries/useContactExpenses";
+import { useCreateRecurringSchedule } from "@/lib/queries/useRecurringSchedules";
 import { useAuth } from "@/lib/auth";
 import { ExpenseFormScreen } from "@/components/ExpenseFormScreen";
 import type { MemberWithProfile } from "@/lib/types";
@@ -21,6 +22,7 @@ export function ContactAddExpenseScreen() {
   const { data: pairCurrency } = useContactCurrency(contactUserId);
   const createContactExpense = useCreateContactExpense();
   const updateContactExpense = useUpdateContactExpense();
+  const createSchedule = useCreateRecurringSchedule();
 
   const contact = contacts?.find((c) => c.contact_user_id === contactUserId);
   const contactName = contact?.full_name ?? "Contact";
@@ -50,17 +52,24 @@ export function ContactAddExpenseScreen() {
       isPending={
         isEdit
           ? updateContactExpense.isPending
-          : createContactExpense.isPending
+          : createContactExpense.isPending || createSchedule.isPending
       }
-      onSubmit={(submission) =>
-        isEdit && expenseId
-          ? updateContactExpense.mutateAsync({
-              expenseId,
-              contactUserId,
+      onSubmit={({ repeat, ...submission }) => {
+        if (isEdit && expenseId) {
+          return updateContactExpense.mutateAsync({
+            expenseId,
+            contactUserId,
+            ...submission,
+          });
+        }
+        return repeat
+          ? createSchedule.mutateAsync({
+              scope: { kind: "contact", contactUserId },
               ...submission,
+              ...repeat,
             })
-          : createContactExpense.mutateAsync({ contactUserId, ...submission })
-      }
+          : createContactExpense.mutateAsync({ contactUserId, ...submission });
+      }}
     />
   );
 }

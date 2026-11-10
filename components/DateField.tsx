@@ -31,6 +31,9 @@ type DateFieldProps = {
   onChange: (date: Date | null) => void;
   label?: string;
   testID?: string;
+  // The "counts toward balances" note belongs to a transaction's date, not to
+  // other dates such as where a repeat ends.
+  showCountsHint?: boolean;
 };
 
 export function DateField({
@@ -38,6 +41,7 @@ export function DateField({
   onChange,
   label = "Date",
   testID = "date-field",
+  showCountsHint = true,
 }: DateFieldProps) {
   const theme = useAppTheme();
   // The raw text of the latest keystroke. The library builds the day with
@@ -82,7 +86,7 @@ export function DateField({
         }}
         testID={testID}
       />
-      {isFuture ? (
+      {isFuture && showCountsHint ? (
         <HelperText
           type="info"
           style={{ color: theme.colors.onSurfaceVariant }}
