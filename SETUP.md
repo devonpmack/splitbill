@@ -99,6 +99,27 @@ publication. To confirm, open *Database → Publications* and check that
 `supabase_realtime` lists those five tables. Realtime still applies each user's
 row-level security, so people only receive changes to groups they belong to.
 
+### Repeating expenses and pg_cron (optional)
+
+Repeating expenses are created ahead of time, up to 48 hours before they are
+due. Two things create them, and either alone is enough:
+
+- **The app, on open.** It calls `materialise_my_recurring`, which creates
+  whatever is due for the groups and contacts of the signed-in user. Nothing to
+  set up. It is safe to run any number of times.
+- **A daily job**, if your project's plan offers the `pg_cron` extension. Enable
+  it in *Database → Extensions* (search for `pg_cron`) before running the
+  migrations; the migration `20261109195000_recurring_cron.sql` then schedules
+  the job `evenpot-materialise-recurring` at 05:00 UTC every day. If the
+  extension is off, that migration does nothing and is not an error. If you
+  enable it after the migrations have run, the migration will not run again, so
+  create the job once in *SQL Editor*:
+  `select cron.schedule('evenpot-materialise-recurring', '0 5 * * *', $$select public._materialise_recurring()$$);`
+  To check it, run `select jobname, schedule from cron.job;`.
+
+Without the job, a repeating expense appears the next time anyone in the group
+opens the app, dated on its true date.
+
 ## 5. Give the app the project URL and key
 
 ```bash
