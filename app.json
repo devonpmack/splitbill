@@ -40,6 +40,13 @@
     "plugins": [
       "expo-router",
       "expo-secure-store"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "6f333c8e-aec9-4b3a-a381-196b02f235d5"
+      }
+    },
+    "owner": "devonpmack"
   }
 }
