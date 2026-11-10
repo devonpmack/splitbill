@@ -2913,6 +2913,10 @@ revoke execute on function public._convert_splits_to_base(jsonb, numeric, numeri
 -- problem (EVNTM: someone left, EVNTI: invalid schedule, or the helper's own
 -- errors); _materialise_recurring decides what to do with the schedule.
 -- Returns the number of expenses created.
+-- Occurrences are created up to p_horizon (48 hours by default) ahead of their
+-- instant. That is safe only because balances ignore rows dated in the future
+-- (`date <= now()` in the balance functions, from the future-dated lane, PR #13):
+-- without it a row created early would count early.
 create or replace function public._materialise_one(
   p_schedule_id uuid,
   p_horizon timestamptz
@@ -3027,6 +3031,8 @@ begin
     v_steps := v_steps + 1;
   end loop;
 
+  -- Write only what changed: a run with nothing due must leave the row alone (an
+  -- update is WAL, a row lock and a realtime event for the whole group).
   update public.recurring_schedules s
   set
     next_index = v_idx,
@@ -3038,7 +3044,18 @@ begin
     stop_reason = case when v_done then 'completed' end,
     failed_runs = 0,
     last_error = null
-  where s.id = v_s.id;
+  where s.id = v_s.id
+    and (
+      v_idx is distinct from v_s.next_index
+      or v_done
+      or v_s.failed_runs <> 0
+      or v_s.last_error is not null
+      or (
+        v_made > 0
+        and upper(btrim(v_s.currency)) <> upper(btrim(v_base))
+        and v_rate is distinct from v_s.last_exchange_rate
+      )
+    );
 
   return v_made;
 end;
@@ -3052,9 +3069,13 @@ revoke execute on function public._materialise_one(uuid, timestamptz)
 -- _materialise_one in its own sub-transaction, so one schedule's failure never
 -- blocks another. A deterministic problem (a member left, an invalid schedule)
 -- stops that schedule with a generic stop_reason and last_error; anything else
--- (lock timeout, deadlock, serialization failure) leaves it active, counts a
--- failed run and is retried next time. Raw error text is never stored: members
--- can read these columns. Returns the number of expenses created.
+-- (lock timeout, deadlock, serialization failure, and also SQLSTATEs such as
+-- 42501, 42883, XX000 or P0002 that point at a bug or a permissions problem)
+-- leaves it active, counts a failed run and is retried next time. There is
+-- deliberately no ceiling: failed_runs is a visible counter, the schedule is
+-- retried once per run and a failure never stops the series by itself. Raw error
+-- text is never stored: members can read these columns. Returns the number of
+-- expenses created.
 create or replace function public._materialise_recurring(
   p_horizon timestamptz default now() + interval '48 hours',
   p_user_id uuid default null
