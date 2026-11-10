@@ -480,6 +480,27 @@ describe("SQL security guards", () => {
     );
   });
 
+  it("keeps exchange_rates closed to clients", () => {
+    const core = readSchema("02_tables_core.sql");
+    const policies = readSchema("05_policies.sql");
+
+    // Only the SECURITY DEFINER rate functions and the service role touch it:
+    // RLS on, no policy of any kind, and no privilege left for the API roles.
+    expect(core).toMatch(/alter table public\.exchange_rates enable row level security;/i);
+    expect(core).toMatch(
+      /revoke all on table public\.exchange_rates from anon, authenticated;/i
+    );
+    expect(policies).not.toMatch(/exchange_rates/i);
+
+    const clientGrants = [...core.matchAll(/grant [^;]*;/gi)]
+      .map((m) => m[0])
+      .filter((statement) => /\bto\b[^;]*\b(anon|authenticated)\b/i.test(statement));
+    expect(clientGrants.length).toBeGreaterThan(0);
+    for (const statement of clientGrants) {
+      expect(statement).not.toMatch(/exchange_rates/i);
+    }
+  });
+
   it("scopes profile visibility to shared context", () => {
     const policies = readSchema("05_policies.sql");
     const functions = readSchema("04_functions.sql");

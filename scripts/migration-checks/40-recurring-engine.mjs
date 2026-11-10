@@ -400,7 +400,7 @@ export default async function recurringEngine({ db, asUser, signUp, rejects, che
   check(
     (await q(`select public._schedule_rate(s) as r from public.recurring_schedules s where id = $1`, [fx]))[0].r !== null &&
       Number((await q(`select public._schedule_rate(s) as r from public.recurring_schedules s where id = $1`, [fx]))[0].r) === 1.13,
-    "_schedule_rate returns last_exchange_rate until a rate source exists"
+    "_schedule_rate returns last_exchange_rate when there is no exchange_rates row"
   );
 
   // ---- Contact schedules --------------------------------------------------------------
