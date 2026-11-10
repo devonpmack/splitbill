@@ -12,6 +12,7 @@ import {
 import { resolveEntryRate } from "@/lib/currency";
 import {
   buildRepeat,
+  lastOccurrenceDate,
   occurrenceDate,
   parseRepeatCount,
   type RepeatEnds,
@@ -128,6 +129,10 @@ export function ExpenseFormScreen({
       ? parseCalendarDate(occurrenceDate(startDate, frequency ?? "daily", 1))
       : pickedEndDay;
   const repeatCountValue = parseRepeatCount(repeatCount);
+  const lastOccurrence =
+    frequency && ends === "count" && repeatCountValue
+      ? lastOccurrenceDate(startDate, frequency, repeatCountValue)
+      : null;
   const entryCurrency = currency ?? baseCurrency;
 
   useHydrateOnce(isEdit && !!existingExpense && members.length > 0, () => {
@@ -311,9 +316,10 @@ export function ExpenseFormScreen({
           onEndDayChange={setPickedEndDay}
           count={repeatCount}
           onCountChange={setRepeatCount}
+          countIsValid={repeatCountValue !== null}
           lastOccurrenceLabel={
-            frequency && repeatCountValue
-              ? `The last one is on ${formatCalendarDay(occurrenceDate(startDate, frequency, repeatCountValue - 1))}.`
+            lastOccurrence
+              ? `The last one is on ${formatCalendarDay(lastOccurrence)}.`
               : undefined
           }
         />

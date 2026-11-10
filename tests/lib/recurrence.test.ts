@@ -3,6 +3,8 @@ import {
   endSummary,
   frequencyLabel,
   nextOccurrence,
+  lastOccurrenceDate,
+  MAX_REPEAT_COUNT,
   occurrenceDate,
   parseRepeatCount,
   repeatsPhrase,
@@ -156,17 +158,52 @@ describe("endSummary", () => {
 });
 
 describe("parseRepeatCount", () => {
-  it("accepts whole numbers of at least one", () => {
-    expect(parseRepeatCount("1")).toBe(1);
-    expect(parseRepeatCount(" 12 ")).toBe(12);
+  it.each([
+    ["1", 1],
+    [" 12 ", 12],
+    ["1000", 1000],
+  ])("accepts %p", (text, expected) => {
+    expect(parseRepeatCount(text)).toBe(expected);
   });
 
-  it.each(["0", "", "  ", "abc", "2.5", "-1", "1e3", "3x"])(
-    "rejects %p",
-    (text) => {
-      expect(parseRepeatCount(text)).toBeNull();
+  it.each([
+    "0",
+    "",
+    "  ",
+    "abc",
+    "2.5",
+    "-1",
+    "1e3",
+    "3x",
+    "12abc",
+    "1001",
+    "99999999",
+    "2147483648",
+    "99999999999999999999999",
+  ])("rejects %p", (text) => {
+    expect(parseRepeatCount(text)).toBeNull();
+  });
+
+  it("caps the count at 1000", () => {
+    expect(MAX_REPEAT_COUNT).toBe(1000);
+  });
+});
+
+describe("lastOccurrenceDate", () => {
+  it("is the date of the count-th occurrence", () => {
+    expect(lastOccurrenceDate("2026-11-09", "monthly", 3)).toBe("2027-01-09");
+    expect(lastOccurrenceDate("2026-11-09", "daily", 1)).toBe("2026-11-09");
+  });
+
+  it("is null for a count that is not valid, never throwing", () => {
+    for (const count of [0, -1, 1001, 99_999_999, 2 ** 31, NaN, 1.5]) {
+      expect(lastOccurrenceDate("2026-11-09", "monthly", count)).toBeNull();
     }
-  );
+  });
+
+  it("is null when the resulting date does not exist, never throwing", () => {
+    expect(lastOccurrenceDate("not-a-date", "monthly", 3)).toBeNull();
+  });
 });
 
 describe("buildRepeat", () => {
@@ -221,7 +258,7 @@ describe("buildRepeat", () => {
     });
     expect(buildRepeat({ ...base, ends: "count", count: "0" })).toEqual({
       ok: false,
-      error: "Number of repeats must be greater than zero",
+      error: "Enter a number from 1 to 1000",
     });
   });
 });

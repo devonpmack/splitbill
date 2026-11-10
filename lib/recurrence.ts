@@ -118,12 +118,33 @@ export function endSummary(schedule: RecurringSchedule): string {
   return parts.length > 0 ? parts.join(" · ") : "Never ends";
 }
 
-// The "After N times" field: a whole number of at least 1, else null.
+// A series is capped well below anything the server or a date can hold.
+export const MAX_REPEAT_COUNT = 1000;
+export const REPEAT_COUNT_ERROR = `Enter a number from 1 to ${MAX_REPEAT_COUNT}`;
+
+function isValidRepeatCount(count: number): boolean {
+  return Number.isInteger(count) && count >= 1 && count <= MAX_REPEAT_COUNT;
+}
+
+// The "After N times" field: a whole number from 1 to the cap, else null.
 export function parseRepeatCount(text: string): number | null {
   const trimmed = text.trim();
   if (!/^\d+$/.test(trimmed)) return null;
   const count = Number(trimmed);
-  return count >= 1 ? count : null;
+  return isValidRepeatCount(count) ? count : null;
+}
+
+// The date of the last of `count` occurrences, or null when the count or the
+// start is not valid. Never throws: it runs while the form renders.
+export function lastOccurrenceDate(
+  startDate: string,
+  frequency: RecurringFrequency,
+  count: number
+): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !isValidRepeatCount(count)) {
+    return null;
+  }
+  return occurrenceDate(startDate, frequency, count - 1);
 }
 
 export type RepeatEnds = "never" | "date" | "count";
@@ -162,7 +183,7 @@ export function buildRepeat(input: {
   if (ends === "count") {
     const maxCount = parseRepeatCount(count);
     return maxCount === null
-      ? { ok: false, error: "Number of repeats must be greater than zero" }
+      ? { ok: false, error: REPEAT_COUNT_ERROR }
       : { ok: true, repeat: { ...base, maxCount } };
   }
   return { ok: true, repeat: base };

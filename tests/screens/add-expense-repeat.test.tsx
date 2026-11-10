@@ -348,8 +348,36 @@ describe("Repeat control on the add expense form", () => {
       expect(args.endDate).toBeUndefined();
     });
 
-    it.each(["0", "", "abc", "2.5", "-1"])(
-      "After N times: refuses %p",
+    it.each([
+      "0",
+      "",
+      "abc",
+      "2.5",
+      "-1",
+      "12abc",
+      "1001",
+      "99999999",
+      "2147483648",
+    ])("After N times: refuses %p, says why inline and does not submit", async (text) => {
+      await renderWithPaper(<AddExpense />);
+      await fillBasics();
+      await chooseRepeat("Monthly");
+      await fireEvent.press(screen.getByText("After"));
+      await fireEvent.changeText(screen.getByLabelText("Number of times"), text);
+
+      expect(screen.getByText("Enter a number from 1 to 1000")).toBeTruthy();
+      expect(screen.queryByText(/The last one is on/)).toBeNull();
+
+      await submit();
+
+      expect(mockShowError).toHaveBeenCalledWith(
+        "Enter a number from 1 to 1000"
+      );
+      expect(mockCreateSchedule).not.toHaveBeenCalled();
+    });
+
+    it.each(["1", "1000"])(
+      "After N times: accepts %p with no error and a last-date hint",
       async (text) => {
         await renderWithPaper(<AddExpense />);
         await fillBasics();
@@ -360,14 +388,39 @@ describe("Repeat control on the add expense form", () => {
           text
         );
 
+        expect(screen.queryByText("Enter a number from 1 to 1000")).toBeNull();
+        expect(screen.getByText(/The last one is on/)).toBeTruthy();
         await submit();
 
-        expect(mockShowError).toHaveBeenCalledWith(
-          "Number of repeats must be greater than zero"
+        await waitFor(() =>
+          expect(mockCreateSchedule).toHaveBeenCalledTimes(1)
         );
-        expect(mockCreateSchedule).not.toHaveBeenCalled();
+        expect(mockCreateSchedule.mock.calls[0][0].maxCount).toBe(Number(text));
       }
     );
+
+    it("a huge count left behind does not crash the form when Ends goes back to Never or On date", async () => {
+      await renderWithPaper(<AddExpense />);
+      await fillBasics();
+      await chooseRepeat("Monthly");
+      await fireEvent.press(screen.getByText("After"));
+      await fireEvent.changeText(
+        screen.getByLabelText("Number of times"),
+        "99999999"
+      );
+
+      await fireEvent.press(screen.getByText("Never"));
+      expect(screen.queryByText(/The last one is on/)).toBeNull();
+      await fireEvent.press(screen.getByText("On date"));
+      expect(screen.getByTestId("end-date-field")).toBeTruthy();
+    });
+
+    it("shows no last-date hint while Ends is Never", async () => {
+      await renderWithPaper(<AddExpense />);
+      await chooseRepeat("Monthly");
+
+      expect(screen.queryByText(/The last one is on/)).toBeNull();
+    });
 
     it("switching back to Never drops the limit", async () => {
       await renderWithPaper(<AddExpense />);

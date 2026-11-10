@@ -1,9 +1,16 @@
 import { View } from "react-native";
-import { Chip, SegmentedButtons, Text, TextInput } from "react-native-paper";
+import {
+  Chip,
+  HelperText,
+  SegmentedButtons,
+  Text,
+  TextInput,
+} from "react-native-paper";
 import { DateField } from "@/components/DateField";
 import {
   FREQUENCIES,
   frequencyLabel,
+  REPEAT_COUNT_ERROR,
   type RepeatEnds,
 } from "@/lib/recurrence";
 import { useAppTheme } from "@/lib/theme";
@@ -20,6 +27,8 @@ type RepeatFieldsProps = {
   onEndDayChange: (day: Date | null) => void;
   count: string;
   onCountChange: (count: string) => void;
+  // False when the count is not a whole number from 1 to the cap.
+  countIsValid: boolean;
   // Where an "After N times" series ends, once the count is valid.
   lastOccurrenceLabel?: string;
 };
@@ -33,6 +42,7 @@ export function RepeatFields({
   onEndDayChange,
   count,
   onCountChange,
+  countIsValid,
   lastOccurrenceLabel,
 }: RepeatFieldsProps) {
   const theme = useAppTheme();
@@ -93,8 +103,12 @@ export function RepeatFields({
                 value={count}
                 onChangeText={onCountChange}
                 keyboardType="number-pad"
+                error={!countIsValid}
                 style={{ marginTop: 16 }}
               />
+              {countIsValid ? null : (
+                <HelperText type="error">{REPEAT_COUNT_ERROR}</HelperText>
+              )}
               {lastOccurrenceLabel ? (
                 <Text
                   variant="bodySmall"
