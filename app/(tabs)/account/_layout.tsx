@@ -16,6 +16,10 @@ export default function AccountLayout() {
       <Stack.Screen name="edit-profile" options={{ title: "Edit Profile" }} />
       <Stack.Screen name="notifications" options={{ title: "Notifications" }} />
       <Stack.Screen name="help" options={{ title: "Help & Support" }} />
+      <Stack.Screen
+        name="delete-account"
+        options={{ title: "Delete Account" }}
+      />
     </Stack>
   );
 }

@@ -416,6 +416,13 @@ export interface Database {
           currency: string;
         }[];
       };
+      // Added by the DB side of account deletion (Engineer B's stack); kept
+      // here so this client PR typechecks on its own. Takes no arguments,
+      // returns nothing and raises on failure.
+      delete_my_account: {
+        Args: Record<PropertyKey, never>;
+        Returns: undefined;
+      };
       check_emails_registered: {
         Args: { p_emails: string[] };
         Returns: {
