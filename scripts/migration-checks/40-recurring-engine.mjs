@@ -109,6 +109,21 @@ export default async function recurringEngine({ db, asUser, signUp, rejects, che
     `the cron migration does nothing, twice over, where pg_cron is unavailable${cronError ? `: ${cronError}` : ""} (the job itself is not exercised here)`
   );
 
+  // Where pg_cron is listed but cannot be created, the guard passes and the
+  // create extension fails. Force the guard open (PGlite has no pg_cron, so the
+  // create fails the same way) and the failure must be swallowed, not abort the migration.
+  const forced = cronSql.replace(/if exists \(select 1 from pg_available_extensions[^)]*\) then/, "if true then");
+  let forcedError = "";
+  try {
+    await db.exec(forced);
+  } catch (error) {
+    forcedError = error.message;
+  }
+  check(
+    forced !== cronSql && forcedError === "" && !/sqlerrm/i.test(cronSql) && /raise notice 'pg_cron job not scheduled: %', sqlstate/.test(cronSql),
+    `a failure while enabling or scheduling pg_cron is swallowed with a generic notice, not raised${forcedError ? `: ${forcedError}` : ""}`
+  );
+
   // ---- The functions exist once each, pinned and private ----------------------
   const { rows: fns } = await db.query(`
     select p.proname, count(*)::int as n, bool_and(p.prosecdef) as secdef,
@@ -646,6 +661,54 @@ export default async function recurringEngine({ db, asUser, signUp, rejects, che
   `);
   const [{ n: total }] = await q(`select count(*)::int as n from public.expenses where schedule_id is not null`);
   check(total > 100 && crossed === 0, `every engine-created expense has its schedule's group_id (${total} checked)`);
+  // ---- A run that changes nothing writes nothing -----------------------------------------------
+  // Every update of a schedule row is a WAL record, a row lock and a realtime event
+  // for the whole group, so a no-op run (every app open) must leave the row untouched.
+  await quiesce();
+  const xmins = async (ids) =>
+    Object.fromEntries(
+      (await q(`select id, xmin::text as x from public.recurring_schedules where id = any($1::uuid[])`, [ids])).map((r) => [r.id, r.x])
+    );
+  const settled = await mk({ frequency: "daily", start_date: await plus(-2), description: "Settled" });
+  const settledFx = await mk({
+    frequency: "daily", start_date: await plus(-2), description: "Settled EUR", currency: "EUR", last_exchange_rate: "1.1234567891",
+  });
+  const settledContact = await mkContact({ frequency: "daily", start_date: await plus(-2), description: "Settled pair" });
+  const notDue = await mk({ start_date: await plus(60), description: "Far away" });
+  const notDueFx = await mk({ start_date: await plus(60), description: "Far away EUR", currency: "EUR", last_exchange_rate: "0.8" });
+  const ids = [settled, settledFx, settledContact, notDue, notDueFx];
+  const untouched = await xmins([notDue, notDueFx]);
+  await runner();
+  check(
+    (await rowsOf(settled)).length >= 4 && (await sched(settledFx)).next_index === (await rowsOf(settled)).length &&
+      (await rowsOf(settledContact, "contact_expenses")).length === (await rowsOf(settled)).length,
+    "the first run creates the due occurrences (fixture for the no-op checks)"
+  );
+  const before = await xmins(ids);
+  check(
+    before[notDue] === untouched[notDue] && before[notDueFx] === untouched[notDueFx],
+    "a run with nothing due leaves a schedule row untouched, including a foreign-currency one"
+  );
+  check((await runner()) === 0, "a repeat run creates nothing");
+  await asUser(erin, () => db.query(`select public.materialise_my_recurring()`));
+  await asUser(hal, () => db.query(`select public.materialise_my_recurring()`));
+  const after = await xmins(ids);
+  check(
+    ids.every((id) => after[id] === before[id]),
+    "repeat runs through the runner and the wrapper do not rewrite any schedule row (xmin unchanged)"
+  );
+  // The counters still clear when the retry has nothing to create.
+  await db.query(`update public.recurring_schedules set failed_runs = 3 where id = $1`, [notDue]);
+  await db.query(`update public.recurring_schedules set last_error = 'Could not create the latest occurrence; it will be retried.' where id = $1`, [notDueFx]);
+  await runner();
+  const [healedA] = await q(`select failed_runs, last_error from public.recurring_schedules where id = $1`, [notDue]);
+  const [healedB] = await q(`select failed_runs, last_error from public.recurring_schedules where id = $1`, [notDueFx]);
+  check(
+    healedA.failed_runs === 0 && healedB.last_error === null,
+    "a run that finds nothing due still clears a leftover failed_runs or last_error"
+  );
+  await quiesce();
+
   const [{ n: crossedPairs }] = await q(`
     select count(*)::int as n from public.contact_expenses e join public.recurring_schedules s on s.id = e.schedule_id
     where (e.user_lo, e.user_hi) is distinct from (s.user_lo, s.user_hi)
