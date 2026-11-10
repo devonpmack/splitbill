@@ -49,6 +49,7 @@ describe("useRecentContactActivity", () => {
     const columns = builder.select.mock.calls[0][0] as string;
     expect(columns).toMatch(/\bschedule_id\b/);
     expect(columns).toMatch(/\boccurrence_date\b/);
+    expect(columns).toMatch(/\bhand_edited\b/);
   });
 });
 

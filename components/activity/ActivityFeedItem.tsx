@@ -156,6 +156,7 @@ function ExpenseRow({
       upcoming={upcoming}
       scheduleId={item.schedule_id}
       occurrenceDate={item.occurrence_date}
+      handEdited={item.hand_edited}
       onPress={() => router.push(`/activity/group/${item.group_id}`)}
       trailing={expenseTrailing(summary, item.currency)}
       edit={{
@@ -203,6 +204,7 @@ function ContactExpenseRow({
       upcoming={upcoming}
       scheduleId={item.schedule_id}
       occurrenceDate={item.occurrence_date}
+      handEdited={item.hand_edited}
       onPress={() =>
         router.push({
           pathname: "/activity/contacts/[id]",

@@ -42,7 +42,11 @@ export function ExpenseCard({
   const payerName = isPayer ? "You" : (expense.payer?.full_name ?? "Someone");
   const summaryLabel = isPayer ? "You lent" : "You borrowed";
 
-  const date = rowDay(expense.date, expense.occurrence_date);
+  const date = rowDay(
+    expense.date,
+    expense.occurrence_date,
+    expense.hand_edited
+  );
   const monthDay = date.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",

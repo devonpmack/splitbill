@@ -34,6 +34,8 @@ type ActivityRowProps = {
   // calendar day rather than the instant in this device's zone.
   scheduleId?: string | null;
   occurrenceDate?: string | null;
+  // A member's edit freezes the row and may move its date off occurrenceDate.
+  handEdited?: boolean | null;
 };
 
 export function ActivityRow({
@@ -49,9 +51,10 @@ export function ActivityRow({
   upcoming,
   scheduleId,
   occurrenceDate,
+  handEdited,
 }: ActivityRowProps) {
   const theme = useAppTheme();
-  const day = rowDay(date, occurrenceDate);
+  const day = rowDay(date, occurrenceDate, handEdited);
   const isSecondary = tone === "secondary";
   const onTone = isSecondary
     ? theme.colors.onSecondaryContainer

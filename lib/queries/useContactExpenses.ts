@@ -21,6 +21,7 @@ const ACTIVITY_CONTACT_EXPENSE_SELECT = `
           date,
           schedule_id,
           occurrence_date,
+          hand_edited,
           paid_by,
           user_lo,
           user_hi,

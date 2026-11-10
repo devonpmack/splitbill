@@ -5,6 +5,7 @@ import {
   isRolledOverMDY,
   isUpcoming,
   parseCalendarDate,
+  rowDay,
   pickedDateParam,
   startOfLocalDayISO,
   toLocalDateString,
@@ -136,5 +137,22 @@ describe("deviceTimeZone", () => {
   it("is the IANA name the runtime reports", () => {
     expect(deviceTimeZone()).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
     expect(deviceTimeZone()).toMatch(/^[A-Za-z_]+(\/[A-Za-z_+\-0-9]+)*$/);
+  });
+});
+
+describe("rowDay", () => {
+  const instant = new Date(2026, 10, 30, 9).toISOString();
+
+  it("is an ordinary row's instant, in the viewer's zone", () => {
+    expect(rowDay(instant)).toEqual(new Date(instant));
+    expect(rowDay(instant, null, false)).toEqual(new Date(instant));
+  });
+
+  it("is a scheduled row's own calendar day", () => {
+    expect(rowDay(instant, "2026-11-11", false)).toEqual(new Date(2026, 10, 11));
+  });
+
+  it("is the instant once a member has moved the occurrence", () => {
+    expect(rowDay(instant, "2026-11-11", true)).toEqual(new Date(instant));
   });
 });

@@ -133,6 +133,39 @@ describe("ExpenseCard repeat chip", () => {
     expect(screen.queryByText("Nov 27")).toBeNull();
   });
 
+  it("a hand-moved occurrence shows the day it was moved to, not occurrence_date", async () => {
+    const date = new Date(2026, 10, 30, 9).toISOString();
+    await renderWithPaper(
+      card(
+        expense({
+          schedule_id: "s1",
+          occurrence_date: "2026-11-11",
+          hand_edited: true,
+          date,
+        })
+      )
+    );
+
+    expect(screen.getByText("Nov 30")).toBeTruthy();
+    expect(screen.queryByText("Nov 11")).toBeNull();
+  });
+
+  it("an unmoved occurrence keeps occurrence_date", async () => {
+    const date = new Date(2026, 10, 30, 9).toISOString();
+    await renderWithPaper(
+      card(
+        expense({
+          schedule_id: "s1",
+          occurrence_date: "2026-11-11",
+          hand_edited: false,
+          date,
+        })
+      )
+    );
+
+    expect(screen.getByText("Nov 11")).toBeTruthy();
+  });
+
   it("still renders an ordinary row's date from its instant", async () => {
     const date = "2026-11-27T12:00:00Z";
     const expected = new Date(date).toLocaleDateString(undefined, {
@@ -214,6 +247,51 @@ describe("activity feed rows", () => {
     expect(screen.getByText("Upcoming")).toBeTruthy();
     expect(screen.getByText("Repeats every 2 weeks")).toBeTruthy();
     expect(screen.getByText("Counts from Dec 1, 2026")).toBeTruthy();
+  });
+
+  it("a hand-moved upcoming row counts from the day it was moved to", async () => {
+    await renderWithPaper(
+      <ActivityFeedItemCard
+        item={{
+          kind: "expense",
+          id: "e1",
+          ts: "x",
+          payload: groupRow({
+            schedule_id: "s1",
+            occurrence_date: "2026-11-11",
+            hand_edited: true,
+            date: new Date(2026, 10, 30, 9).toISOString(),
+          }),
+        }}
+        currentUserId="u1"
+        upcoming
+      />
+    );
+
+    expect(screen.getByText("Counts from Nov 30, 2026")).toBeTruthy();
+    expect(screen.queryByText(/Nov 11/)).toBeNull();
+  });
+
+  it("a hand-moved contact row shows the moved day", async () => {
+    await renderWithPaper(
+      <ActivityFeedItemCard
+        item={{
+          kind: "contact-expense",
+          id: "c1",
+          ts: "x",
+          payload: contactRow({
+            schedule_id: "s2",
+            occurrence_date: "2026-11-11",
+            hand_edited: true,
+            date: new Date(2026, 10, 30, 9).toISOString(),
+          }),
+        }}
+        currentUserId="u1"
+      />
+    );
+
+    expect(screen.getByText("Nov 30, 2026")).toBeTruthy();
+    expect(screen.queryByText("Nov 11, 2026")).toBeNull();
   });
 
   it("shows no chip and the instant's day on an ordinary row", async () => {

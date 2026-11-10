@@ -37,11 +37,19 @@ export function parseCalendarDate(day: string): Date {
   return new Date(year, month - 1, date);
 }
 
-// The day a row is shown under. A scheduled row carries its schedule's
-// calendar date, which every viewer sees as is; any other row is dated by its
-// instant in the viewer's own zone.
-export function rowDay(date: string, occurrenceDate?: string | null): Date {
-  return occurrenceDate ? parseCalendarDate(occurrenceDate) : new Date(date);
+// The day a row is shown under. An untouched scheduled row carries its
+// schedule's calendar date, which every viewer sees as is. Any other row is
+// dated by its instant in the viewer's own zone, and that includes an
+// occurrence a member has edited: the server keeps its occurrence_date but
+// moves `date`, and `date` is what balances count from.
+export function rowDay(
+  date: string,
+  occurrenceDate?: string | null,
+  handEdited?: boolean | null
+): Date {
+  return occurrenceDate && !handEdited
+    ? parseCalendarDate(occurrenceDate)
+    : new Date(date);
 }
 
 export function formatCalendarDay(day: string): string {

@@ -50,6 +50,7 @@ export type EditableExpense = {
   exchange_rate: number;
   date?: string;
   occurrence_date?: string | null;
+  hand_edited?: boolean;
   expense_splits?: { user_id: string; amount: number }[] | null;
 };
 
@@ -67,10 +68,10 @@ export type ExpenseFormSubmission = {
   repeat?: RepeatSubmission;
 };
 
-// A scheduled row is dated by its schedule's calendar day, whichever zone it
-// is edited from.
+// An untouched scheduled row is dated by its schedule's calendar day, whichever
+// zone it is edited from; a moved one by its own date.
 function storedDate(expense: EditableExpense | undefined): string | undefined {
-  return expense?.occurrence_date
+  return expense?.occurrence_date && !expense.hand_edited
     ? startOfLocalDayISO(parseCalendarDate(expense.occurrence_date))
     : expense?.date;
 }

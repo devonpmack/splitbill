@@ -461,6 +461,9 @@ export interface Database {
           payer: Profile | null;
           groups: { name: string } | null;
           expense_splits: { user_id: string; amount: number }[];
+          schedule_id: string | null;
+          occurrence_date: string | null;
+          hand_edited: boolean;
         }[];
       };
       get_upcoming_expenses: {
@@ -476,6 +479,9 @@ export interface Database {
           payer: Profile | null;
           groups: { name: string } | null;
           expense_splits: { user_id: string; amount: number }[];
+          schedule_id: string | null;
+          occurrence_date: string | null;
+          hand_edited: boolean;
         }[];
       };
       get_group_simplified_edges: {
@@ -871,6 +877,7 @@ export interface ActivityExpense {
   expense_splits: { user_id: string; amount: number }[];
   schedule_id?: string | null;
   occurrence_date?: string | null;
+  hand_edited?: boolean;
 }
 
 export interface ActivityPayment {
@@ -902,6 +909,7 @@ export interface ActivityContactExpense {
   expense_splits: { user_id: string; amount: number }[];
   schedule_id?: string | null;
   occurrence_date?: string | null;
+  hand_edited?: boolean;
 }
 
 export interface ActivityContactPayment {

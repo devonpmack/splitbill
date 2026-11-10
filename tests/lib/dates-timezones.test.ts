@@ -90,6 +90,8 @@ new Function("module", "exports", "require", js)(mod, mod.exports, require);
 process.stdout.write(JSON.stringify({
   occurrence: mod.exports.formatCalendarDay(occurrenceDate),
   fromInstant: mod.exports.formatDay(instant),
+  unmoved: mod.exports.formatDay(mod.exports.rowDay(instant, occurrenceDate, false)),
+  moved: mod.exports.formatDay(mod.exports.rowDay(instant, occurrenceDate, true)),
 }));
 `;
 
@@ -102,6 +104,8 @@ function viewIn(tz: string, occurrenceDate: string, instant: string) {
   return JSON.parse(stdout.toString()) as {
     occurrence: string;
     fromInstant: string;
+    unmoved: string;
+    moved: string;
   };
 }
 
@@ -119,5 +123,22 @@ describe("formatCalendarDay across viewers", () => {
   it("is the instant, not the occurrence date, that differs between them", () => {
     expect(auckland.fromInstant).toBe("Dec 1, 2026");
     expect(vancouver.fromInstant).toBe("Nov 30, 2026");
+  });
+});
+
+describe("rowDay across viewers", () => {
+  // Nov 11 occurrence moved by a member to Dec 1 00:00 in Auckland (UTC+13).
+  const instant = "2026-12-01T00:00:00+13:00";
+  const auckland = viewIn("Pacific/Auckland", "2026-11-11", instant);
+  const vancouver = viewIn("America/Vancouver", "2026-11-11", instant);
+
+  it("an unmoved row shows the schedule's date to both viewers", () => {
+    expect(auckland.unmoved).toBe("Nov 11, 2026");
+    expect(vancouver.unmoved).toBe("Nov 11, 2026");
+  });
+
+  it("a moved row shows the instant's day in each viewer's own zone, as balances count it", () => {
+    expect(auckland.moved).toBe("Dec 1, 2026");
+    expect(vancouver.moved).toBe("Nov 30, 2026");
   });
 });
