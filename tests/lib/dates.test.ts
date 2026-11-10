@@ -1,9 +1,13 @@
 import {
+  deviceTimeZone,
+  formatCalendarDay,
   formatDay,
   isRolledOverMDY,
   isUpcoming,
+  parseCalendarDate,
   pickedDateParam,
   startOfLocalDayISO,
+  toLocalDateString,
 } from "@/lib/dates";
 
 // Expected strings are built from local Date parts, so these pass in any TZ.
@@ -99,5 +103,38 @@ describe("isRolledOverMDY", () => {
   it("does not judge text that is not a complete day", () => {
     expect(isRolledOverMDY("02/30/202", new Date(2026, 2, 5))).toBe(false);
     expect(isRolledOverMDY("", new Date(2026, 2, 5))).toBe(false);
+  });
+});
+
+describe("toLocalDateString", () => {
+  it("writes the local calendar day as YYYY-MM-DD, never an instant", () => {
+    expect(toLocalDateString(new Date(2026, 10, 9, 23, 59))).toBe("2026-11-09");
+    expect(toLocalDateString(new Date(2026, 0, 5, 0, 0))).toBe("2026-01-05");
+    expect(toLocalDateString(new Date(2028, 1, 29, 12))).toBe("2028-02-29");
+  });
+});
+
+describe("parseCalendarDate", () => {
+  it("is local midnight of that day, whatever the zone", () => {
+    const parsed = parseCalendarDate("2026-12-01");
+    expect([parsed.getFullYear(), parsed.getMonth(), parsed.getDate()]).toEqual(
+      [2026, 11, 1]
+    );
+    expect(parsed.getHours()).toBe(0);
+  });
+});
+
+describe("formatCalendarDay", () => {
+  it("formats a plain calendar date as the same day it names", () => {
+    expect(formatCalendarDay("2026-12-01")).toBe(
+      formatDay(new Date(2026, 11, 1))
+    );
+  });
+});
+
+describe("deviceTimeZone", () => {
+  it("is the IANA name the runtime reports", () => {
+    expect(deviceTimeZone()).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    expect(deviceTimeZone()).toMatch(/^[A-Za-z_]+(\/[A-Za-z_+\-0-9]+)*$/);
   });
 });

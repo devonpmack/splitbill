@@ -24,6 +24,27 @@ export function startOfLocalDayISO(date: Date): string {
   );
 }
 
+// The local calendar day as "YYYY-MM-DD", the shape a `date` column takes.
+// Never an instant: a day is sent as a day so no zone can move it.
+export function toLocalDateString(date: Date): string {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+// A plain "YYYY-MM-DD" calendar date as local midnight of that day, so every
+// local formatter prints the day it names in any zone.
+export function parseCalendarDate(day: string): Date {
+  const [year, month, date] = day.split("-").map(Number);
+  return new Date(year, month - 1, date);
+}
+
+export function formatCalendarDay(day: string): string {
+  return formatDay(parseCalendarDate(day));
+}
+
+export function deviceTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
 // Display only: the server decides what counts toward balances.
 export function isUpcoming(dateISO: string, now: Date = new Date()): boolean {
   return new Date(dateISO).getTime() > now.getTime();

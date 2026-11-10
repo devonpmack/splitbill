@@ -74,3 +74,50 @@ describe.each(Object.entries(ZONES))("startOfLocalDayISO in %s", (tz, days) => {
     }
   );
 });
+
+// A scheduled row's `date` is an instant (the start of the schedule's local
+// day), which a viewer in another zone sees as a different calendar day. The
+// plain `occurrence_date` is what every viewer must be shown.
+const CALENDAR_CHILD = `
+const fs = require("fs");
+const ts = require("typescript");
+const [file, occurrenceDate, instant] = process.argv.slice(1);
+const js = ts.transpileModule(fs.readFileSync(file, "utf8"), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+}).outputText;
+const mod = { exports: {} };
+new Function("module", "exports", "require", js)(mod, mod.exports, require);
+process.stdout.write(JSON.stringify({
+  occurrence: mod.exports.formatCalendarDay(occurrenceDate),
+  fromInstant: mod.exports.formatDay(instant),
+}));
+`;
+
+function viewIn(tz: string, occurrenceDate: string, instant: string) {
+  const stdout = execFileSync(
+    process.execPath,
+    ["-e", CALENDAR_CHILD, DATES_TS, occurrenceDate, instant],
+    { env: { ...process.env, TZ: tz }, cwd: path.join(__dirname, "../..") }
+  );
+  return JSON.parse(stdout.toString()) as {
+    occurrence: string;
+    fromInstant: string;
+  };
+}
+
+describe("formatCalendarDay across viewers", () => {
+  // Created in Auckland: Dec 1 starts at 00:00 NZDT (UTC+13).
+  const instant = "2026-12-01T00:00:00+13:00";
+  const auckland = viewIn("Pacific/Auckland", "2026-12-01", instant);
+  const vancouver = viewIn("America/Vancouver", "2026-12-01", instant);
+
+  it("shows the schedule's date to a viewer in Auckland and in Vancouver", () => {
+    expect(auckland.occurrence).toBe("Dec 1, 2026");
+    expect(vancouver.occurrence).toBe("Dec 1, 2026");
+  });
+
+  it("is the instant, not the occurrence date, that differs between them", () => {
+    expect(auckland.fromInstant).toBe("Dec 1, 2026");
+    expect(vancouver.fromInstant).toBe("Nov 30, 2026");
+  });
+});
