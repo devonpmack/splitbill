@@ -415,9 +415,13 @@ begin
     raise exception 'You are not a member of this group';
   end if;
 
+  -- Only live members count: a deleted account (profiles.deleted_at) can stay in
+  -- a group as a ghost, but nobody sees the group through it, and it cannot be
+  -- handed the group.
   select count(*) into v_other_count
-  from public.group_members
-  where group_id = p_group_id and user_id <> v_uid;
+  from public.group_members gm
+  join public.profiles p on p.id = gm.user_id
+  where gm.group_id = p_group_id and gm.user_id <> v_uid and p.deleted_at is null;
 
   if v_other_count = 0 then
     delete from public.groups where id = p_group_id;
@@ -479,10 +483,11 @@ begin
   select created_by into v_created_by from public.groups where id = p_group_id;
 
   if v_created_by = v_uid then
-    select user_id into v_new_owner
-    from public.group_members
-    where group_id = p_group_id and user_id <> v_uid
-    order by joined_at asc
+    select gm.user_id into v_new_owner
+    from public.group_members gm
+    join public.profiles p on p.id = gm.user_id
+    where gm.group_id = p_group_id and gm.user_id <> v_uid and p.deleted_at is null
+    order by gm.joined_at asc
     limit 1;
 
     update public.groups set created_by = v_new_owner where id = p_group_id;
@@ -492,6 +497,139 @@ begin
   where group_id = p_group_id and user_id = v_uid;
 end;
 $$;
+
+-- Internal: one user's net balance in one group, the same arithmetic as
+-- get_group_balances (base amounts, rows dated in the future not yet counted)
+-- but for p_user_id rather than for whoever is signed in, so account deletion can
+-- ask it with no JWT. Not callable by clients.
+create or replace function public._group_member_balance(p_group_id uuid, p_user_id uuid)
+returns numeric
+language sql
+security definer
+stable
+set search_path = public, pg_temp
+as $$
+  select (
+    coalesce((
+      select sum(e.base_amount) from public.expenses e
+      where e.group_id = p_group_id and e.paid_by = p_user_id and e.date <= now()
+    ), 0)
+    - coalesce((
+      select sum(es.base_amount)
+      from public.expense_splits es
+      join public.expenses e on e.id = es.expense_id
+      where e.group_id = p_group_id and es.user_id = p_user_id and e.date <= now()
+    ), 0)
+    + coalesce((
+      select sum(py.base_amount) from public.payments py
+      where py.group_id = p_group_id and py.paid_by = p_user_id and py.date <= now()
+    ), 0)
+    - coalesce((
+      select sum(py.base_amount) from public.payments py
+      where py.group_id = p_group_id and py.paid_to = p_user_id and py.date <= now()
+    ), 0)
+  )::numeric(12, 2);
+$$;
+
+revoke execute on function public._group_member_balance(uuid, uuid)
+  from public, anon, authenticated;
+
+-- Internal: takes p_uid out of one group for an account deletion. Not a gate and
+-- raises nothing for the business cases; not callable by clients. delete_my_account
+-- must first stop the user's running schedules and delete their future-dated
+-- expenses and payments, and only then call this for every group they are in:
+-- this function does neither, and a schedule or future row still there keeps the
+-- membership as a ghost.
+--   1. Not a member: nothing happens.
+--   2. No other live member (another member whose profile has no deleted_at):
+--      the group is deleted with everything in it; nobody alive can see it.
+--   3. Otherwise a group p_uid created goes to the longest-standing other live
+--      member (joined_at, then user_id).
+--   4. The membership is removed only when p_uid's net balance is zero and nothing
+--      future-dated or still running involves them (leave_group's rules).
+--      Otherwise it stays as a ghost: balances join group_members, so dropping a
+--      member with a non-zero balance would silently move everyone else's numbers.
+-- It does not use auth.uid().
+create or replace function public._account_leave_group(p_uid uuid, p_group_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_created_by uuid;
+  v_new_owner uuid;
+begin
+  if p_uid is null or p_group_id is null or not exists (
+    select 1 from public.group_members
+    where group_id = p_group_id and user_id = p_uid
+  ) then
+    return;
+  end if;
+
+  select created_by into v_created_by
+  from public.groups where id = p_group_id for update;
+
+  select gm.user_id into v_new_owner
+  from public.group_members gm
+  join public.profiles p on p.id = gm.user_id
+  where gm.group_id = p_group_id and gm.user_id <> p_uid and p.deleted_at is null
+  order by gm.joined_at asc, gm.user_id asc
+  limit 1;
+
+  if v_new_owner is null then
+    delete from public.groups where id = p_group_id;
+    return;
+  end if;
+
+  if v_created_by = p_uid then
+    update public.groups set created_by = v_new_owner where id = p_group_id;
+  end if;
+
+  if abs(public._group_member_balance(p_group_id, p_uid)) >= 0.01 then
+    return;
+  end if;
+
+  if exists (
+    select 1 from public.expenses e
+    where e.group_id = p_group_id
+      and e.date > now()
+      and (
+        e.paid_by = p_uid
+        or exists (
+          select 1 from public.expense_splits es
+          where es.expense_id = e.id
+            and es.user_id = p_uid
+            and es.amount > 0
+        )
+      )
+  ) or exists (
+    select 1 from public.payments py
+    where py.group_id = p_group_id
+      and py.date > now()
+      and p_uid in (py.paid_by, py.paid_to)
+  ) or exists (
+    select 1 from public.recurring_schedules s
+    where s.group_id = p_group_id
+      and s.stopped_at is null
+      and (
+        s.paid_by = p_uid
+        or exists (
+          select 1 from jsonb_array_elements(s.splits) sp
+          where (sp->>'userId')::uuid = p_uid
+        )
+      )
+  ) then
+    return;
+  end if;
+
+  delete from public.group_members
+  where group_id = p_group_id and user_id = p_uid;
+end;
+$$;
+
+revoke execute on function public._account_leave_group(uuid, uuid)
+  from public, anon, authenticated;
 
 -- Normalises a list of invite emails: lowercased, trimmed, blanks dropped,
 -- deduped, and with the caller's own address removed (they are always a member
@@ -786,6 +924,14 @@ begin
     v_split_base_total := v_split_base_total + v_split_base;
   end loop;
 
+  if exists (
+    select 1 from public.profiles p
+    where p.deleted_at is not null
+      and (p.id = p_paid_by or p.id in (select (s->>'userId')::uuid from jsonb_array_elements(coalesce(p_splits, '[]'::jsonb)) s))
+  ) then
+    raise exception 'Deleted users cannot be added to new expenses';
+  end if;
+
   if v_split_count = 0 then
     raise exception 'At least one split is required';
   end if;
@@ -980,6 +1126,22 @@ begin
     v_split_total := v_split_total + v_split_amount;
     v_split_base_total := v_split_base_total + v_split_base;
   end loop;
+
+  -- A deleted user may stay on an expense they were already part of, in the same
+  -- role, but cannot be added to it.
+  if (
+    p_paid_by is distinct from (select e.paid_by from public.expenses e where e.id = p_expense_id)
+    and exists (select 1 from public.profiles p where p.id = p_paid_by and p.deleted_at is not null)
+  ) or exists (
+    select 1 from public.profiles p
+    where p.deleted_at is not null
+      and p.id in (select (s->>'userId')::uuid from jsonb_array_elements(coalesce(p_splits, '[]'::jsonb)) s)
+      and not exists (
+        select 1 from public.expense_splits es where es.expense_id = p_expense_id and es.user_id = p.id
+      )
+  ) then
+    raise exception 'Deleted users cannot be added to new expenses';
+  end if;
 
   if v_split_count = 0 then
     raise exception 'At least one split is required';
@@ -1388,6 +1550,14 @@ begin
     v_split_base_total := v_split_base_total + v_split_base;
   end loop;
 
+  if exists (
+    select 1 from public.profiles p
+    where p.deleted_at is not null
+      and (p.id = p_contact_user_id or p.id = p_paid_by or p.id in (select (s->>'userId')::uuid from jsonb_array_elements(coalesce(p_splits, '[]'::jsonb)) s))
+  ) then
+    raise exception 'Deleted users cannot be added to new expenses';
+  end if;
+
   if v_split_count = 0 then
     raise exception 'At least one split is required';
   end if;
@@ -1586,6 +1756,22 @@ begin
     v_split_total := v_split_total + v_split_amount;
     v_split_base_total := v_split_base_total + v_split_base;
   end loop;
+
+  -- A deleted user may stay on an expense they were already part of, in the same
+  -- role, but cannot be added to it.
+  if (
+    p_paid_by is distinct from (select e.paid_by from public.contact_expenses e where e.id = p_expense_id)
+    and exists (select 1 from public.profiles p where p.id = p_paid_by and p.deleted_at is not null)
+  ) or exists (
+    select 1 from public.profiles p
+    where p.deleted_at is not null
+      and p.id in (select (s->>'userId')::uuid from jsonb_array_elements(coalesce(p_splits, '[]'::jsonb)) s)
+      and not exists (
+        select 1 from public.contact_expense_splits es where es.expense_id = p_expense_id and es.user_id = p.id
+      )
+  ) then
+    raise exception 'Deleted users cannot be added to new expenses';
+  end if;
 
   if v_split_count = 0 then
     raise exception 'At least one split is required';
@@ -2992,13 +3178,15 @@ begin
   end if;
 
   if v_s.kind = 'group' then
-    if not public.is_group_member(v_s.group_id, v_s.paid_by) then
+    if not public.is_group_member(v_s.group_id, v_s.paid_by)
+      or exists (select 1 from public.profiles p where p.id = v_s.paid_by and p.deleted_at is not null) then
       raise exception 'schedule member left' using errcode = 'EVNTM';
     end if;
     for v_member in
       select distinct (e->>'userId')::uuid from jsonb_array_elements(v_s.splits) e
     loop
-      if not public.is_group_member(v_s.group_id, v_member) then
+      if not public.is_group_member(v_s.group_id, v_member)
+        or exists (select 1 from public.profiles p where p.id = v_member and p.deleted_at is not null) then
         raise exception 'schedule member left' using errcode = 'EVNTM';
       end if;
     end loop;
@@ -3014,6 +3202,12 @@ begin
     if not exists (
       select 1 from public.contacts c
       where c.owner_id = v_s.paid_by and c.contact_user_id = v_other
+    ) then
+      raise exception 'schedule member left' using errcode = 'EVNTM';
+    end if;
+    if exists (
+      select 1 from public.profiles p
+      where p.id in (v_s.user_lo, v_s.user_hi) and p.deleted_at is not null
     ) then
       raise exception 'schedule member left' using errcode = 'EVNTM';
     end if;
@@ -3691,6 +3885,14 @@ begin
       jsonb_build_object('userId', lower(v_split_user::text), 'amount', v_split_amount)
     );
   end loop;
+  -- A schedule that includes a deleted user would only be stopped by the engine.
+  if exists (
+    select 1 from public.profiles p
+    where p.deleted_at is not null
+      and (p.id = v_paid_by or p.id = any (v_seen) or p.id in (v_s.user_lo, v_s.user_hi))
+  ) then
+    raise exception 'Deleted users cannot be added to new expenses';
+  end if;
   if v_split_total <> v_amount then
     raise exception 'Split amounts must add up to the expense total';
   end if;
