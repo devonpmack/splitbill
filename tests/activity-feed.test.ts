@@ -215,6 +215,46 @@ describe("buildActivityFeed", () => {
       expect(feed.past.map((i) => i.id)).toEqual(["e1"]);
     });
 
+    it.each([
+      ["upcomingPayments", "payment"],
+      ["upcomingContactExpenses", "contact-expense"],
+      ["upcomingContactPayments", "contact-payment"],
+    ] as const)(
+      "takes %s as upcoming, drops a duplicate of a recent row, and moves it to the past once its date passes",
+      (source, kind) => {
+        const recent = {
+          upcomingPayments: "payments",
+          upcomingContactExpenses: "contactExpenses",
+          upcomingContactPayments: "contactPayments",
+        }[source];
+        const sources = {
+          [recent]: [{ id: "r1", date: PAST }],
+          [source]: [
+            { id: "r2", date: FUTURE },
+            { id: "r1", date: PAST },
+          ],
+        } as never;
+
+        const feed = buildActivityFeed(sources, NOW);
+        expect(feed.upcoming.map((i) => [i.kind, i.id])).toEqual([[kind, "r2"]]);
+        expect(feed.past.map((i) => i.id)).toEqual(["r1"]);
+
+        const later = buildActivityFeed(sources, new Date("2026-11-21T00:00:00.000Z"));
+        expect(later.upcoming).toEqual([]);
+        expect(later.past.map((i) => i.id)).toEqual(["r2", "r1"]);
+      }
+    );
+
+    it("never lists a simplify-debts event as upcoming, even one stamped ahead of this device's clock", () => {
+      const feed = buildActivityFeed(
+        { simplifyEvents: [{ id: "s", created_at: FUTURE }] } as never,
+        NOW
+      );
+
+      expect(feed.upcoming).toEqual([]);
+      expect(feed.past.map((i) => i.id)).toEqual(["s"]);
+    });
+
     it("treats a row exactly at now as past", () => {
       const feed = buildActivityFeed(
         { payments: [{ id: "p", date: NOW.toISOString() }] } as never,

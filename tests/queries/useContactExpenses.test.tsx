@@ -1,10 +1,19 @@
 import { renderHook, waitFor } from "@testing-library/react-native";
-import { actAsync, createWrapper, queryBuilder } from "../helpers/testUtils";
+import {
+  actAsync,
+  createWrapper,
+  freezeNow,
+  queryBuilder,
+} from "../helpers/testUtils";
+import React from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 
 import {
   useContactExpenses,
+  useRecentContactActivity,
+  useUpcomingContactActivity,
   useCreateContactExpense,
   useUpdateContactExpense,
   useDeleteContactExpense,
@@ -208,5 +217,81 @@ describe("useDeleteContactExpense", () => {
         result.current.mutateAsync({ expenseId: "ce1", contactUserId: "user-2" })
       )
     ).rejects.toThrow("You are not a participant in this expense");
+  });
+});
+
+describe("useRecentContactActivity and useUpcomingContactActivity split the feed at now", () => {
+  const NOW = new Date("2026-11-09T12:00:00.000Z");
+
+  beforeEach(() => freezeNow(NOW));
+  afterEach(() => jest.useRealTimers());
+
+  it("useRecentContactActivity reads only rows dated at or before now", async () => {
+    const builder = queryBuilder({ data: [], error: null });
+    mockedSupabase.from.mockReturnValue(builder);
+
+    const { result } = await renderHook(() => useRecentContactActivity(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockedSupabase.from).toHaveBeenCalledWith("contact_expenses");
+    expect(builder.lte).toHaveBeenCalledWith("date", NOW.toISOString());
+    expect(builder.gt).not.toHaveBeenCalled();
+    expect(builder.order).toHaveBeenCalledWith("date", { ascending: false });
+  });
+
+  it("useUpcomingContactActivity reads only rows dated after now, soonest first", async () => {
+    const rows = [{ id: "r1" }];
+    const builder = queryBuilder({ data: rows, error: null });
+    mockedSupabase.from.mockReturnValue(builder);
+
+    const { result } = await renderHook(() => useUpcomingContactActivity(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual(rows);
+    expect(mockedSupabase.from).toHaveBeenCalledWith("contact_expenses");
+    expect(builder.select).toHaveBeenCalledWith(
+      expect.stringMatching(/^\s*id,[\s\S]*\bdate,/)
+    );
+    expect(builder.gt).toHaveBeenCalledWith("date", NOW.toISOString());
+    expect(builder.lte).not.toHaveBeenCalled();
+    expect(builder.order).toHaveBeenCalledWith("date", { ascending: true });
+    expect(builder.limit).toHaveBeenCalledWith(50);
+  });
+
+  it("useUpcomingContactActivity surfaces query errors", async () => {
+    mockedSupabase.from.mockReturnValue(
+      queryBuilder({ data: null, error: new Error("boom") })
+    );
+
+    const { result } = await renderHook(() => useUpcomingContactActivity(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+
+  it("useUpcomingContactActivity is refetched by the ['contact-activity'] invalidation every write issues", async () => {
+    const builder = queryBuilder({ data: [], error: null });
+    mockedSupabase.from.mockReturnValue(builder);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+
+    const { result } = await renderHook(() => useUpcomingContactActivity(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockedSupabase.from).toHaveBeenCalledTimes(1);
+
+    await actAsync(async () => {
+      await queryClient.invalidateQueries({ queryKey: ["contact-activity"] });
+    });
+
+    expect(mockedSupabase.from).toHaveBeenCalledTimes(2);
   });
 });

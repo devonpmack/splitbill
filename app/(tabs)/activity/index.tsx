@@ -3,12 +3,17 @@ import {
   useRecentActivity,
   useUpcomingActivity,
 } from "@/lib/queries/useExpenses";
-import { useRecentPayments } from "@/lib/queries/usePayments";
+import {
+  useRecentPayments,
+  useUpcomingPayments,
+} from "@/lib/queries/usePayments";
 import {
   useRecentContactActivity,
+  useUpcomingContactActivity,
 } from "@/lib/queries/useContactExpenses";
 import {
   useRecentContactPayments,
+  useUpcomingContactPayments,
 } from "@/lib/queries/useContactPayments";
 import { useRecentGroupSettingChanges } from "@/lib/queries/useGroups";
 import { useAuth } from "@/lib/auth";
@@ -20,7 +25,7 @@ import {
 import { buildActivityFeed } from "@/lib/utils";
 import { Text } from "react-native-paper";
 import { useNow } from "@/lib/useNow";
-import type { ActivityFeedItem } from "@/lib/types";
+import type { ActivityContactExpense, ActivityFeedItem } from "@/lib/types";
 import { EmptyState } from "@/components/EmptyState";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { useState, useCallback } from "react";
@@ -48,15 +53,30 @@ export default function Activity() {
     isLoading: paymentsLoading,
   } = useRecentPayments();
   const {
+    data: upcomingPayments,
+    refetch: refetchUpcomingPayments,
+    isLoading: upcomingPaymentsLoading,
+  } = useUpcomingPayments();
+  const {
     data: contactExpenses,
     refetch: refetchContactExpenses,
     isLoading: contactExpensesLoading,
   } = useRecentContactActivity();
   const {
+    data: upcomingContactExpenses,
+    refetch: refetchUpcomingContactExpenses,
+    isLoading: upcomingContactExpensesLoading,
+  } = useUpcomingContactActivity();
+  const {
     data: contactPayments,
     refetch: refetchContactPayments,
     isLoading: contactPaymentsLoading,
   } = useRecentContactPayments();
+  const {
+    data: upcomingContactPayments,
+    refetch: refetchUpcomingContactPayments,
+    isLoading: upcomingContactPaymentsLoading,
+  } = useUpcomingContactPayments();
   const {
     data: simplifyEvents,
     refetch: refetchSimplifyEvents,
@@ -68,8 +88,11 @@ export default function Activity() {
     expensesLoading ||
     upcomingLoading ||
     paymentsLoading ||
+    upcomingPaymentsLoading ||
     contactExpensesLoading ||
+    upcomingContactExpensesLoading ||
     contactPaymentsLoading ||
+    upcomingContactPaymentsLoading ||
     simplifyEventsLoading;
 
   const refetchAll = useCallback(
@@ -78,16 +101,22 @@ export default function Activity() {
         refetchExpenses(),
         refetchUpcoming(),
         refetchPayments(),
+        refetchUpcomingPayments(),
         refetchContactExpenses(),
+        refetchUpcomingContactExpenses(),
         refetchContactPayments(),
+        refetchUpcomingContactPayments(),
         refetchSimplifyEvents(),
       ]),
     [
       refetchExpenses,
       refetchUpcoming,
       refetchPayments,
+      refetchUpcomingPayments,
       refetchContactExpenses,
+      refetchUpcomingContactExpenses,
       refetchContactPayments,
+      refetchUpcomingContactPayments,
       refetchSimplifyEvents,
     ]
   );
@@ -100,25 +129,34 @@ export default function Activity() {
 
   // Contact expenses are still filtered here: RLS scopes them to the two
   // participants, but a zero-share expense is not the caller's activity.
+  const involved = (rows: ActivityContactExpense[] | undefined) =>
+    (rows ?? []).filter((row) => isInvolvedInExpense(row, user?.id));
   const sources = {
     expenses,
     upcomingExpenses,
     payments,
-    contactExpenses: (contactExpenses ?? []).filter((contactExpense) =>
-      isInvolvedInExpense(contactExpense, user?.id)
-    ),
+    upcomingPayments,
+    contactExpenses: involved(contactExpenses),
+    upcomingContactExpenses: involved(upcomingContactExpenses),
     contactPayments,
+    upcomingContactPayments,
     simplifyEvents,
   };
 
   // Balances change when a row's date arrives, so the timer also refetches the
-  // feed; the rows themselves move between the groups as `now` advances.
+  // feed; the rows themselves move between the groups as `now` advances. Every
+  // dated source feeds the timer. Simplify events are left out: they are never
+  // upcoming.
   const now = useNow(
     [
+      ...(expenses ?? []),
       ...(upcomingExpenses ?? []),
       ...(payments ?? []),
-      ...(sources.contactExpenses ?? []),
+      ...(upcomingPayments ?? []),
+      ...sources.contactExpenses,
+      ...sources.upcomingContactExpenses,
       ...(contactPayments ?? []),
+      ...(upcomingContactPayments ?? []),
     ].map((row) => row.date),
     () => {
       refetchAll();

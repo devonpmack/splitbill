@@ -128,9 +128,7 @@ export function ActivityRow({
         >
           {upcoming ? <UpcomingTag /> : null}
           <Text variant="labelSmall" style={{ color: onTone }}>
-            {upcoming
-              ? `Counts from ${formatDay(date)}`
-              : new Date(date).toLocaleDateString()}
+            {upcoming ? `Counts from ${formatDay(date)}` : formatDay(date)}
           </Text>
         </View>
       </Card.Content>

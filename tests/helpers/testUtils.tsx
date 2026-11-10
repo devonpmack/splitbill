@@ -125,6 +125,8 @@ type ChainMethod =
   | "select"
   | "eq"
   | "in"
+  | "lte"
+  | "gt"
   | "order"
   | "limit"
   | "single"
@@ -136,6 +138,8 @@ const CHAIN_METHODS: ChainMethod[] = [
   "select",
   "eq",
   "in",
+  "lte",
+  "gt",
   "order",
   "limit",
   "single",

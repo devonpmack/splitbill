@@ -11,16 +11,8 @@ import { buildSplitsPayload, validateSplitsTotal } from "../utils";
 import { invalidateContactPairQueries } from "./invalidate";
 import { sortPair } from "./contact-pair";
 
-export function useRecentContactActivity() {
-  const { user } = useAuth();
-
-  return useQuery({
-    queryKey: ["contact-activity", user?.id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("contact_expenses")
-        .select(
-          `
+const ACTIVITY_LIMIT = 50;
+const ACTIVITY_CONTACT_EXPENSE_SELECT = `
           id,
           description,
           amount,
@@ -33,10 +25,43 @@ export function useRecentContactActivity() {
           user_lo_profile:profiles!contact_expenses_user_lo_fkey (*),
           user_hi_profile:profiles!contact_expenses_user_hi_fkey (*),
           expense_splits:contact_expense_splits (user_id, amount)
-        `
-        )
+        `;
+
+export function useRecentContactActivity() {
+  const { user } = useAuth();
+
+  return useQuery({
+    queryKey: ["contact-activity", user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("contact_expenses")
+        .select(ACTIVITY_CONTACT_EXPENSE_SELECT)
+        .lte("date", new Date().toISOString())
         .order("date", { ascending: false })
-        .limit(50);
+        .limit(ACTIVITY_LIMIT);
+
+      if (error) throw error;
+      return data as unknown as ActivityContactExpense[];
+    },
+    enabled: !!user,
+  });
+}
+
+// Future-dated rows, soonest first; the recent read above leaves them out so
+// they cannot take its 50 slots. The key sits under the recent key's prefix, so
+// every activity invalidation covers it too.
+export function useUpcomingContactActivity() {
+  const { user } = useAuth();
+
+  return useQuery({
+    queryKey: ["contact-activity", user?.id, "upcoming"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("contact_expenses")
+        .select(ACTIVITY_CONTACT_EXPENSE_SELECT)
+        .gt("date", new Date().toISOString())
+        .order("date", { ascending: true })
+        .limit(ACTIVITY_LIMIT);
 
       if (error) throw error;
       return data as unknown as ActivityContactExpense[];

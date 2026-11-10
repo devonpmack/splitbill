@@ -6,6 +6,9 @@ import { formatDay } from "@/lib/dates";
 const mockRefetch = jest.fn();
 const mockRefetchUpcoming = jest.fn();
 const mockRefetchPayments = jest.fn();
+const mockRefetchUpcomingPayments = jest.fn();
+const mockRefetchUpcomingContactExpenses = jest.fn();
+const mockRefetchUpcomingContactPayments = jest.fn();
 const mockRefetchContactExpenses = jest.fn();
 const mockRefetchContactPayments = jest.fn();
 const mockRefetchSimplifyEvents = jest.fn();
@@ -16,12 +19,17 @@ jest.mock("@/lib/queries/useExpenses", () => ({
   useRecentActivity: jest.fn(),
   useUpcomingActivity: jest.fn(),
 }));
-jest.mock("@/lib/queries/usePayments", () => ({ useRecentPayments: jest.fn() }));
+jest.mock("@/lib/queries/usePayments", () => ({
+  useRecentPayments: jest.fn(),
+  useUpcomingPayments: jest.fn(),
+}));
 jest.mock("@/lib/queries/useContactExpenses", () => ({
   useRecentContactActivity: jest.fn(),
+  useUpcomingContactActivity: jest.fn(),
 }));
 jest.mock("@/lib/queries/useContactPayments", () => ({
   useRecentContactPayments: jest.fn(),
+  useUpcomingContactPayments: jest.fn(),
 }));
 jest.mock("@/lib/queries/useGroups", () => ({
   useRecentGroupSettingChanges: jest.fn(),
@@ -33,12 +41,17 @@ import {
   useRecentActivity,
   useUpcomingActivity,
 } from "@/lib/queries/useExpenses";
-import { useRecentPayments } from "@/lib/queries/usePayments";
+import {
+  useRecentPayments,
+  useUpcomingPayments,
+} from "@/lib/queries/usePayments";
 import {
   useRecentContactActivity,
+  useUpcomingContactActivity,
 } from "@/lib/queries/useContactExpenses";
 import {
   useRecentContactPayments,
+  useUpcomingContactPayments,
 } from "@/lib/queries/useContactPayments";
 import { useRecentGroupSettingChanges } from "@/lib/queries/useGroups";
 
@@ -63,6 +76,36 @@ function setPayments(overrides?: { data?: unknown; isLoading?: boolean }) {
     data: overrides?.data ?? [],
     isLoading: overrides?.isLoading ?? false,
     refetch: mockRefetchPayments,
+  });
+}
+
+function setUpcomingPayments(overrides?: { data?: unknown; isLoading?: boolean }) {
+  (useUpcomingPayments as jest.Mock).mockReturnValue({
+    data: overrides?.data ?? [],
+    isLoading: overrides?.isLoading ?? false,
+    refetch: mockRefetchUpcomingPayments,
+  });
+}
+
+function setUpcomingContactExpenses(overrides?: {
+  data?: unknown;
+  isLoading?: boolean;
+}) {
+  (useUpcomingContactActivity as jest.Mock).mockReturnValue({
+    data: overrides?.data ?? [],
+    isLoading: overrides?.isLoading ?? false,
+    refetch: mockRefetchUpcomingContactExpenses,
+  });
+}
+
+function setUpcomingContactPayments(overrides?: {
+  data?: unknown;
+  isLoading?: boolean;
+}) {
+  (useUpcomingContactPayments as jest.Mock).mockReturnValue({
+    data: overrides?.data ?? [],
+    isLoading: overrides?.isLoading ?? false,
+    refetch: mockRefetchUpcomingContactPayments,
   });
 }
 
@@ -104,6 +147,9 @@ beforeEach(() => {
   mockRefetch.mockResolvedValue(undefined);
   mockRefetchUpcoming.mockResolvedValue(undefined);
   mockRefetchPayments.mockResolvedValue(undefined);
+  mockRefetchUpcomingPayments.mockResolvedValue(undefined);
+  mockRefetchUpcomingContactExpenses.mockResolvedValue(undefined);
+  mockRefetchUpcomingContactPayments.mockResolvedValue(undefined);
   mockRefetchContactExpenses.mockResolvedValue(undefined);
   mockRefetchContactPayments.mockResolvedValue(undefined);
   mockRefetchSimplifyEvents.mockResolvedValue(undefined);
@@ -111,6 +157,9 @@ beforeEach(() => {
   setActivity();
   setUpcoming();
   setPayments();
+  setUpcomingPayments();
+  setUpcomingContactExpenses();
+  setUpcomingContactPayments();
   setContactExpenses();
   setContactPayments();
   setSimplifyEvents();
@@ -265,13 +314,13 @@ describe("Activity screen", () => {
     await renderWithPaper(<Activity />);
 
     expect(
-      screen.getByText(new Date("2024-02-01T12:00:00Z").toLocaleDateString())
+      screen.getByText(formatDay("2024-02-01T12:00:00Z"))
     ).toBeTruthy();
     expect(
-      screen.getByText(new Date("2024-03-01T12:00:00Z").toLocaleDateString())
+      screen.getByText(formatDay("2024-03-01T12:00:00Z"))
     ).toBeTruthy();
     expect(
-      screen.queryByText(new Date("2023-12-01T12:00:00Z").toLocaleDateString())
+      screen.queryByText(formatDay("2023-12-01T12:00:00Z"))
     ).toBeNull();
   });
 
@@ -781,7 +830,7 @@ describe("Activity screen", () => {
       expect(screen.getAllByText("Upcoming")).toHaveLength(2);
 
       await act(async () => {
-        jest.advanceTimersByTime(10_000);
+        jest.advanceTimersByTime(12_000);
       });
 
       expect(screen.queryByText("Upcoming")).toBeNull();
@@ -808,7 +857,7 @@ describe("Activity screen", () => {
       expect(screen.getAllByText("Upcoming")).toHaveLength(2);
 
       await act(async () => {
-        jest.advanceTimersByTime(10_000);
+        jest.advanceTimersByTime(12_000);
       });
 
       expect(screen.queryByText("Upcoming")).toBeNull();
@@ -822,6 +871,141 @@ describe("Activity screen", () => {
       });
 
       expect(mockRefetchUpcoming).toHaveBeenCalled();
+    });
+
+    it.each([
+      ["a future payment from its own read", () => setUpcomingPayments, () => payment("p", 21, soon())],
+      [
+        "a future contact expense from its own read",
+        () => setUpcomingContactExpenses,
+        () => contactExpense("ce", "Gym", soon()),
+      ],
+      [
+        "a future contact payment from its own read",
+        () => setUpcomingContactPayments,
+        () => contactPayment("cp", 23, soon()),
+      ],
+      ["a row in the recent expenses", () => setActivity, () => expense("e", "Rent", soon())],
+    ])("starts the timer from the date of %s", async (_name, setter, row) => {
+      setter()({ data: [row()] });
+      await renderWithPaper(<Activity />);
+      expect(screen.getAllByText("Upcoming")).toHaveLength(2);
+
+      await act(async () => {
+        jest.advanceTimersByTime(12_000);
+      });
+
+      expect(screen.queryByText("Upcoming")).toBeNull();
+    });
+
+    it("refetches the three upcoming reads too on refresh", async () => {
+      await renderWithPaper(<Activity />);
+
+      await act(async () => {
+        screen.getByTestId("activity-feed").props.refreshControl.props.onRefresh();
+      });
+
+      expect(mockRefetchUpcomingPayments).toHaveBeenCalled();
+      expect(mockRefetchUpcomingContactExpenses).toHaveBeenCalled();
+      expect(mockRefetchUpcomingContactPayments).toHaveBeenCalled();
+    });
+
+    it.each([
+      ["payments", () => setUpcomingPayments],
+      ["contact expenses", () => setUpcomingContactExpenses],
+      ["contact payments", () => setUpcomingContactPayments],
+    ])("waits for the upcoming %s read before leaving the loading state", async (_name, setter) => {
+      setter()({ isLoading: true });
+      await renderWithPaper(<Activity />);
+
+      expect(screen.queryByText("No recent activity")).toBeNull();
+    });
+
+    describe("data that arrives after the screen has been open a while", () => {
+      const TEN_MIN = 10 * 60_000;
+
+      it("lists an expense the server already counts as history, not upcoming, and refetches nothing", async () => {
+        setActivity({ data: [expense("old", "Old lunch", "2026-11-08T12:00:00.000Z")] });
+        const view = await renderWithPaper(<Activity />);
+        expect(screen.queryByText("Upcoming")).toBeNull();
+
+        jest.setSystemTime(new Date(NOW.getTime() + TEN_MIN));
+        const created = new Date(Date.now() - 2_000).toISOString();
+        setActivity({
+          data: [
+            expense("new", "Fresh dinner", created),
+            expense("old", "Old lunch", "2026-11-08T12:00:00.000Z"),
+          ],
+        });
+        mockRefetch.mockClear();
+        await act(async () => {
+          await view.rerender(<Activity />);
+        });
+
+        expect(screen.getByText("Fresh dinner")).toBeTruthy();
+        expect(screen.queryByText("Upcoming")).toBeNull();
+        expect(screen.queryByText(/Counts from/)).toBeNull();
+
+        await act(async () => {
+          jest.advanceTimersByTime(60_000);
+        });
+        expect(screen.queryByText("Upcoming")).toBeNull();
+        expect(mockRefetch).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ["group payment", () => setPayments, () => payment("p", 21, new Date(Date.now() - 1_000).toISOString())],
+        [
+          "contact expense",
+          () => setContactExpenses,
+          () => contactExpense("ce", "Gym", new Date(Date.now() - 1_000).toISOString()),
+        ],
+        [
+          "contact payment",
+          () => setContactPayments,
+          () => contactPayment("cp", 23, new Date(Date.now() - 1_000).toISOString()),
+        ],
+      ])("lists a %s created after minutes on screen as history", async (_name, setter, row) => {
+        const view = await renderWithPaper(<Activity />);
+        jest.setSystemTime(new Date(NOW.getTime() + TEN_MIN));
+        setter()({ data: [row()] });
+        await act(async () => {
+          await view.rerender(<Activity />);
+        });
+        await act(async () => {
+          jest.advanceTimersByTime(60_000);
+        });
+
+        expect(screen.queryByText("Upcoming")).toBeNull();
+        expect(screen.queryByText("No recent activity")).toBeNull();
+      });
+
+      it("lists a simplify-debts event recorded after minutes on screen as history", async () => {
+        const view = await renderWithPaper(<Activity />);
+        jest.setSystemTime(new Date(NOW.getTime() + TEN_MIN));
+        setSimplifyEvents({
+          data: [
+            {
+              id: "sd1",
+              group_id: "g1",
+              actor_id: "u1",
+              enabled: true,
+              created_at: new Date(Date.now() - 1_000).toISOString(),
+              actor: { id: "u1", full_name: "Me" },
+              groups: { name: "Trip" },
+            },
+          ],
+        });
+        await act(async () => {
+          await view.rerender(<Activity />);
+        });
+        await act(async () => {
+          jest.advanceTimersByTime(60_000);
+        });
+
+        expect(screen.getByText("You turned on simplify debts")).toBeTruthy();
+        expect(screen.queryByText("Upcoming")).toBeNull();
+      });
     });
 
     it("opens an upcoming row for editing", async () => {

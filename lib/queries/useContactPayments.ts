@@ -8,16 +8,8 @@ import { useAuth } from "../auth";
 import { invalidateContactPairQueries } from "./invalidate";
 import { sortPair } from "./contact-pair";
 
-export function useRecentContactPayments() {
-  const { user } = useAuth();
-
-  return useQuery({
-    queryKey: ["contact-payments-activity", user?.id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("contact_payments")
-        .select(
-          `
+const ACTIVITY_LIMIT = 50;
+const ACTIVITY_CONTACT_PAYMENT_SELECT = `
           id,
           amount,
           currency,
@@ -27,10 +19,43 @@ export function useRecentContactPayments() {
           note,
           payer:profiles!contact_payments_paid_by_fkey (*),
           payee:profiles!contact_payments_paid_to_fkey (*)
-        `
-        )
+        `;
+
+export function useRecentContactPayments() {
+  const { user } = useAuth();
+
+  return useQuery({
+    queryKey: ["contact-payments-activity", user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("contact_payments")
+        .select(ACTIVITY_CONTACT_PAYMENT_SELECT)
+        .lte("date", new Date().toISOString())
         .order("date", { ascending: false })
-        .limit(50);
+        .limit(ACTIVITY_LIMIT);
+
+      if (error) throw error;
+      return data as unknown as ActivityContactPayment[];
+    },
+    enabled: !!user,
+  });
+}
+
+// Future-dated rows, soonest first; the recent read above leaves them out so
+// they cannot take its 50 slots. The key sits under the recent key's prefix, so
+// every activity invalidation covers it too.
+export function useUpcomingContactPayments() {
+  const { user } = useAuth();
+
+  return useQuery({
+    queryKey: ["contact-payments-activity", user?.id, "upcoming"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("contact_payments")
+        .select(ACTIVITY_CONTACT_PAYMENT_SELECT)
+        .gt("date", new Date().toISOString())
+        .order("date", { ascending: true })
+        .limit(ACTIVITY_LIMIT);
 
       if (error) throw error;
       return data as unknown as ActivityContactPayment[];

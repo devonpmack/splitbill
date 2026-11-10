@@ -7,16 +7,8 @@ import type {
 import { useAuth } from "../auth";
 import { invalidateGroupQueries } from "./invalidate";
 
-export function useRecentPayments() {
-  const { user } = useAuth();
-
-  return useQuery({
-    queryKey: ["activity-payments", user?.id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("payments")
-        .select(
-          `
+const ACTIVITY_LIMIT = 50;
+const ACTIVITY_PAYMENT_SELECT = `
           id,
           amount,
           currency,
@@ -28,10 +20,43 @@ export function useRecentPayments() {
           payer:profiles!payments_paid_by_fkey (*),
           payee:profiles!payments_paid_to_fkey (*),
           groups (name)
-        `
-        )
+        `;
+
+export function useRecentPayments() {
+  const { user } = useAuth();
+
+  return useQuery({
+    queryKey: ["activity-payments", user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("payments")
+        .select(ACTIVITY_PAYMENT_SELECT)
+        .lte("date", new Date().toISOString())
         .order("date", { ascending: false })
-        .limit(50);
+        .limit(ACTIVITY_LIMIT);
+
+      if (error) throw error;
+      return data as unknown as ActivityPayment[];
+    },
+    enabled: !!user,
+  });
+}
+
+// Future-dated rows, soonest first; the recent read above leaves them out so
+// they cannot take its 50 slots. The key sits under the recent key's prefix, so
+// every activity invalidation covers it too.
+export function useUpcomingPayments() {
+  const { user } = useAuth();
+
+  return useQuery({
+    queryKey: ["activity-payments", user?.id, "upcoming"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("payments")
+        .select(ACTIVITY_PAYMENT_SELECT)
+        .gt("date", new Date().toISOString())
+        .order("date", { ascending: true })
+        .limit(ACTIVITY_LIMIT);
 
       if (error) throw error;
       return data as unknown as ActivityPayment[];
